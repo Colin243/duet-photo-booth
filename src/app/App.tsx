@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, type MutableRefObject } from "react"
 import Peer, { type DataConnection, type MediaConnection } from "peerjs"
+import { FilesetResolver, ImageSegmenter } from "@mediapipe/tasks-vision"
+import { downloadStrip } from "../lib/downloadStrip"
 import {
   Camera, Download, Share2, RotateCcw, Check, Copy, X,
   Move, ChevronRight, ChevronLeft,
@@ -331,62 +333,98 @@ function drawVignette(ctx:CanvasRenderingContext2D, W:number, H:number, strength
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H)
 }
 
+type PersonBounds={ x:number; y:number; width:number; height:number }
+
+function drawPersonCutout(
+  ctx:CanvasRenderingContext2D,
+  video:HTMLVideoElement,
+  mask:HTMLCanvasElement,
+  personBounds:PersonBounds|null,
+  scratch:HTMLCanvasElement,
+  x:number, y:number, width:number, height:number,
+  mirrored=true
+) {
+  if(scratch.width!==ctx.canvas.width) scratch.width=ctx.canvas.width
+  if(scratch.height!==ctx.canvas.height) scratch.height=ctx.canvas.height
+  const work=scratch.getContext("2d")!
+  work.clearRect(0,0,scratch.width,scratch.height)
+  const tracked=personBounds||{x:.08,y:.02,width:.84,height:.98}
+  const sourceW=video.videoWidth, sourceH=video.videoHeight
+  const sx=tracked.x*sourceW, sy=tracked.y*sourceH
+  const sw=tracked.width*sourceW, sh=tracked.height*sourceH
+  const scale=Math.min(width/sw,height/sh)
+  const drawW=sw*scale, drawH=sh*scale
+  const drawX=x+(width-drawW)/2, drawY=y+height-drawH
+  work.drawImage(video,sx,sy,sw,sh,drawX,drawY,drawW,drawH)
+  work.globalCompositeOperation="destination-in"
+  work.drawImage(
+    mask,
+    tracked.x*mask.width,
+    tracked.y*mask.height,
+    tracked.width*mask.width,
+    tracked.height*mask.height,
+    drawX,drawY,drawW,drawH
+  )
+  work.globalCompositeOperation="source-over"
+
+  ctx.save()
+  ctx.shadowColor="rgba(46,25,43,.22)"
+  ctx.shadowBlur=18
+  ctx.shadowOffsetY=8
+  if(mirrored){ ctx.translate(drawX*2+drawW,0); ctx.scale(-1,1) }
+  ctx.drawImage(scratch,drawX,drawY,drawW,drawH,drawX,drawY,drawW,drawH)
+  ctx.restore()
+}
+
 function drawBoothFrame(
   ctx:CanvasRenderingContext2D,
   video:HTMLVideoElement,
   partnerVideo:HTMLVideoElement|null,
   W:number, H:number,
   themeId:ThemeId,
-  proximity:number
+  proximity:number,
+  localMask:HTMLCanvasElement|null,
+  partnerMask:HTMLCanvasElement|null,
+  localBounds:PersonBounds|null,
+  partnerBounds:PersonBounds|null,
+  localScratch:HTMLCanvasElement,
+  partnerScratch:HTMLCanvasElement
 ) {
   ctx.clearRect(0,0,W,H)
   drawThemeBg(ctx,themeId,W,H)
 
-  const pW=W*.415, pH=H*.82, pY=H*.09
-  const maxGap=W*.13, minGap=-pW*.22
+  const pW=W*.48, pH=H*.88, pY=H*.055
+  const maxGap=W*.045, minGap=-pW*.34
   const gap=maxGap-(proximity/100)*(maxGap-minGap)
   const youX=W/2-pW-gap/2
   const partX=W/2+gap/2
 
-  if(video.readyState>=2) {
-    // Your live feed behaves like a physical photo-booth mirror.
-    ctx.save(); ctx.beginPath(); rRect(ctx,youX,pY,pW,pH,8); ctx.clip()
-    ctx.translate(youX*2+pW,0); ctx.scale(-1,1)
-    ctx.drawImage(video,youX,pY,pW,pH); ctx.restore()
+  if(video.readyState>=2&&localMask) {
+    drawPersonCutout(ctx,video,localMask,localBounds,localScratch,youX,pY,pW,pH,true)
+  }
 
-    // The partner position only ever shows the real remote WebRTC feed.
-    const partnerReady=Boolean(partnerVideo&&partnerVideo.readyState>=2)
-    if(partnerReady&&partnerVideo){
-      ctx.save(); ctx.beginPath(); rRect(ctx,partX,pY,pW,pH,8); ctx.clip()
-      ctx.translate(partX*2+pW,0); ctx.scale(-1,1)
-      ctx.drawImage(partnerVideo,partX,pY,pW,pH); ctx.restore()
-    } else {
+  const partnerReady=Boolean(partnerVideo&&partnerVideo.readyState>=2&&partnerMask)
+  if(partnerReady&&partnerVideo&&partnerMask){
+    drawPersonCutout(ctx,partnerVideo,partnerMask,partnerBounds,partnerScratch,partX,pY,pW,pH,true)
+  } else {
       ctx.save(); ctx.beginPath(); rRect(ctx,partX,pY,pW,pH,8)
       ctx.fillStyle="rgba(255,255,255,.24)"; ctx.fill()
       ctx.setLineDash([8,8]); ctx.strokeStyle="rgba(255,255,255,.58)"; ctx.lineWidth=2; ctx.stroke()
       ctx.setLineDash([]); ctx.textAlign="center"; ctx.fillStyle="rgba(255,255,255,.92)"
-      ctx.font="600 15px Nunito, sans-serif"; ctx.fillText("Waiting for your partner",partX+pW/2,pY+pH/2-5)
+      ctx.font="600 15px Nunito, sans-serif"; ctx.fillText(partnerVideo?"Isolating your partner…":"Waiting for your partner",partX+pW/2,pY+pH/2-5)
       ctx.font="500 11px Nunito, sans-serif"; ctx.fillStyle="rgba(255,255,255,.68)"
-      ctx.fillText("Their live camera will appear here",partX+pW/2,pY+pH/2+17); ctx.restore()
-    }
+      ctx.fillText(partnerVideo?"Removing their room background":"Their live camera will appear here",partX+pW/2,pY+pH/2+17); ctx.restore()
+  }
 
-    // Soft overlap blend when very close
-    if(partnerReady&&partnerVideo&&proximity>72 && gap<0){
-      const ovX=Math.max(youX,partX), ovW=youX+pW-partX
-      if(ovW>2){
-        ctx.save(); ctx.beginPath(); rRect(ctx,ovX,pY,ovW,pH,0); ctx.clip()
-        ctx.globalAlpha=0.38; ctx.globalCompositeOperation="multiply"
-        ctx.translate(partX*2+pW,0); ctx.scale(-1,1)
-        ctx.drawImage(partnerVideo,partX,pY,pW,pH); ctx.restore()
-      }
-    }
-
-    // CCTV: apply green tint on top of people
-    if(themeId==="cctv"){
+  // CCTV: apply green tint on top of the isolated people.
+  if(themeId==="cctv"){
+    if(localMask){
       ctx.save(); ctx.beginPath()
       rRect(ctx,youX,pY,pW,pH,8); ctx.clip()
       ctx.fillStyle="rgba(0,40,0,0.15)"; ctx.fillRect(youX,pY,pW,pH)
       ctx.restore()
+    }
+    if(partnerReady){
       ctx.save(); ctx.beginPath()
       rRect(ctx,partX,pY,pW,pH,8); ctx.clip()
       ctx.fillStyle="rgba(0,40,0,0.15)"; ctx.fillRect(partX,pY,pW,pH)
@@ -743,6 +781,15 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
   const partnerRef  = useRef<HTMLVideoElement>(null)
   const previewRef  = useRef<HTMLCanvasElement>(null)
   const captureRef  = useRef<HTMLCanvasElement>(null)
+  const segmenterRef= useRef<ImageSegmenter|null>(null)
+  const localMaskRef= useRef(document.createElement("canvas"))
+  const partnerMaskRef=useRef(document.createElement("canvas"))
+  const localScratchRef=useRef(document.createElement("canvas"))
+  const partnerScratchRef=useRef(document.createElement("canvas"))
+  const localBoundsRef=useRef<PersonBounds|null>(null)
+  const partnerBoundsRef=useRef<PersonBounds|null>(null)
+  const lastSegmentRef=useRef(0)
+  const segmentBusyRef=useRef(false)
   const rafRef      = useRef<number>()
   const timerRef    = useRef<ReturnType<typeof setInterval>>()
   const [photos, setPhotos]     = useState<string[]>([])
@@ -750,11 +797,18 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
   const [flashing, setFlashing]   = useState(false)
   const [proximity, setProximity] = useState(50)
   const [poked, setPoked]         = useState(false)
+  const [segmentStatus,setSegmentStatus]=useState<"loading"|"ready"|"error">("loading")
+  const [localMaskReady,setLocalMaskReady]=useState(false)
+  const [partnerMaskReady,setPartnerMaskReady]=useState(false)
+  const localMaskReadyRef=useRef(false)
+  const partnerMaskReadyRef=useRef(false)
 
   const theme  = THEMES.find(t=>t.id===themeId)!
   const isDark = theme.dark
   const MAX    = 10
   const needed = layout==="classic"?4:6
+  const masksReady=segmentStatus==="ready"&&localMaskReady&&partnerMaskReady
+  const canShoot=Boolean(remoteStream)&&masksReady&&countdown===null&&photos.length<MAX
 
   useEffect(()=>{
     if(stream&&vidRef.current){ vidRef.current.srcObject=stream; vidRef.current.play().catch(()=>{}) }
@@ -762,23 +816,129 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
 
   useEffect(()=>{
     if(remoteStream&&partnerRef.current){ partnerRef.current.srcObject=remoteStream; partnerRef.current.play().catch(()=>{}) }
+    if(!remoteStream){ partnerMaskReadyRef.current=false; setPartnerMaskReady(false) }
   },[remoteStream])
+
+  useEffect(()=>{
+    let cancelled=false
+    ;(async()=>{
+      try{
+        const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm")
+        const segmenter=await ImageSegmenter.createFromOptions(vision,{
+          baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite" },
+          runningMode:"VIDEO",
+          outputConfidenceMasks:true,
+          outputCategoryMask:false,
+        })
+        if(cancelled){ segmenter.close(); return }
+        segmenterRef.current=segmenter
+        setSegmentStatus("ready")
+      }catch(error){
+        console.error("Person segmentation could not start",error)
+        if(!cancelled) setSegmentStatus("error")
+      }
+    })()
+    return ()=>{
+      cancelled=true
+      segmenterRef.current?.close()
+      segmenterRef.current=null
+    }
+  },[])
+
+  const updatePersonMask=useCallback((video:HTMLVideoElement,maskCanvas:HTMLCanvasElement,boundsRef:MutableRefObject<PersonBounds|null>,onFirstMask:()=>void,timestamp:number)=>{
+    const segmenter=segmenterRef.current
+    if(!segmenter||video.readyState<2||!video.videoWidth) return
+    segmenter.segmentForVideo(video,timestamp,result=>{
+      const masks=result.confidenceMasks
+      const mask=masks?.[masks.length-1]
+      if(!mask) return
+      const width=mask.width, height=mask.height
+      if(maskCanvas.width!==width) maskCanvas.width=width
+      if(maskCanvas.height!==height) maskCanvas.height=height
+      const values=mask.getAsFloat32Array()
+      const pixels=new Uint8ClampedArray(width*height*4)
+      let minX=width, minY=height, maxX=0, maxY=0, trackedPixels=0
+      for(let i=0;i<values.length;i++){
+        const normalized=Math.max(0,Math.min(1,(values[i]-.18)/.55))
+        const feathered=normalized*normalized*(3-2*normalized)
+        if(values[i]>.42){
+          const px=i%width, py=Math.floor(i/width)
+          minX=Math.min(minX,px); minY=Math.min(minY,py)
+          maxX=Math.max(maxX,px); maxY=Math.max(maxY,py); trackedPixels++
+        }
+        const p=i*4
+        pixels[p]=pixels[p+1]=pixels[p+2]=255
+        pixels[p+3]=Math.round(feathered*255)
+      }
+      maskCanvas.getContext("2d")!.putImageData(new ImageData(pixels,width,height),0,0)
+      if(trackedPixels>width*height*.015){
+        const rawX=minX/width, rawY=minY/height
+        const rawW=(maxX-minX+1)/width, rawH=(maxY-minY+1)/height
+        const next={
+          x:Math.max(0,rawX-rawW*.13),
+          y:Math.max(0,rawY-rawH*.08),
+          width:Math.min(1,rawW*1.26),
+          height:Math.min(1,rawH*1.12),
+        }
+        next.width=Math.min(next.width,1-next.x)
+        next.height=Math.min(next.height,1-next.y)
+        const previous=boundsRef.current
+        boundsRef.current=previous?{
+          x:previous.x*.72+next.x*.28,
+          y:previous.y*.72+next.y*.28,
+          width:previous.width*.72+next.width*.28,
+          height:previous.height*.72+next.height*.28,
+        }:next
+      }
+      onFirstMask()
+    })
+  },[])
 
   // Animation loop
   useEffect(()=>{
     const canvas=previewRef.current, video=vidRef.current
     if(!canvas||!video) return
     const ctx=canvas.getContext("2d")!
-    const loop=()=>{ drawBoothFrame(ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,proximity); rafRef.current=requestAnimationFrame(loop) }
+    const loop=()=>{
+      const now=performance.now()
+      if(segmenterRef.current&&!segmentBusyRef.current&&now-lastSegmentRef.current>110){
+        segmentBusyRef.current=true
+        try{
+          updatePersonMask(video,localMaskRef.current,localBoundsRef,()=>{
+            if(!localMaskReadyRef.current){ localMaskReadyRef.current=true; setLocalMaskReady(true) }
+          },now)
+          const partner=partnerRef.current
+          if(partner&&remoteStream) updatePersonMask(partner,partnerMaskRef.current,partnerBoundsRef,()=>{
+            if(!partnerMaskReadyRef.current){ partnerMaskReadyRef.current=true; setPartnerMaskReady(true) }
+          },now+.01)
+          lastSegmentRef.current=now
+        }catch(error){ console.warn("Person mask frame skipped",error) }
+        finally{ segmentBusyRef.current=false }
+      }
+      drawBoothFrame(
+        ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,proximity,
+        localMaskReadyRef.current?localMaskRef.current:null,
+        partnerMaskReadyRef.current?partnerMaskRef.current:null,
+        localBoundsRef.current,partnerBoundsRef.current,
+        localScratchRef.current,partnerScratchRef.current
+      )
+      rafRef.current=requestAnimationFrame(loop)
+    }
     loop()
     return ()=>{ if(rafRef.current) cancelAnimationFrame(rafRef.current) }
-  },[themeId,proximity])
+  },[themeId,proximity,remoteStream,updatePersonMask])
 
   const doCapture = useCallback(()=>{
     const video=vidRef.current, canvas=captureRef.current
     if(!video||!canvas) return
     const ctx=canvas.getContext("2d")!
-    drawBoothFrame(ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,proximity)
+    drawBoothFrame(
+      ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,proximity,
+      localMaskReadyRef.current?localMaskRef.current:null,
+      partnerMaskReadyRef.current?partnerMaskRef.current:null,
+      localBoundsRef.current,partnerBoundsRef.current,
+      localScratchRef.current,partnerScratchRef.current
+    )
     const url=canvas.toDataURL("image/jpeg",0.93)
     setPhotos(prev=>[...prev,url])
     onPhotoCapture(url)
@@ -865,6 +1025,10 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
           <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>Closer →</span>
         </div>
 
+        <div style={{ fontSize:11, color:segmentStatus==="error"?"#ef4444":sub, fontWeight:600 }}>
+          {segmentStatus==="error"?"Person isolation could not load — refresh to retry":masksReady?"Both people isolated ✓":"Preparing person cutouts…"}
+        </div>
+
         {/* Thumbnails */}
         {photos.length>0&&(
           <div style={{ display:"flex", gap:7, overflowX:"auto", maxWidth:"100%", paddingBottom:4 }}>
@@ -879,15 +1043,15 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
 
       {/* Controls */}
       <div style={{ position:"relative", zIndex:10, padding:"16px 24px 36px", display:"flex", alignItems:"center", justifyContent:"center", gap:20 }}>
-        <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{!remoteStream?"Waiting for partner’s live camera":photos.length<MAX?`${MAX-photos.length} moment${MAX-photos.length===1?"":"s"} left`:"All ten captured"}</div>
+        <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{!remoteStream?"Waiting for partner’s live camera":!masksReady?"Removing both room backgrounds":photos.length<MAX?`${MAX-photos.length} moment${MAX-photos.length===1?"":"s"} left`:"All ten captured"}</div>
 
         {/* Shutter */}
         <button
-          onClick={remoteStream?onCaptureRequest:undefined}
-          disabled={!remoteStream||countdown!==null||photos.length>=MAX}
+          onClick={canShoot?onCaptureRequest:undefined}
+          disabled={!canShoot}
           aria-label="Capture photo"
-          style={{ width:72, height:72, borderRadius:"50%", background:!remoteStream||countdown!==null||photos.length>=MAX?(isDark?"rgba(255,255,255,0.14)":"#e8e8e8"):acc, border:`4px solid ${isDark?"rgba(255,255,255,0.14)":"rgba(200,91,130,0.18)"}`, boxShadow:!remoteStream||countdown!==null||photos.length>=MAX?"none":`0 6px 26px ${acc}80`, cursor:!remoteStream||countdown!==null||photos.length>=MAX?"not-allowed":"pointer", transition:"all 0.2s", display:"flex", alignItems:"center", justifyContent:"center" }}
-          onMouseEnter={e=>{ if(remoteStream&&countdown===null&&photos.length<MAX) e.currentTarget.style.transform="scale(1.08)" }}
+          style={{ width:72, height:72, borderRadius:"50%", background:!canShoot?(isDark?"rgba(255,255,255,0.14)":"#e8e8e8"):acc, border:`4px solid ${isDark?"rgba(255,255,255,0.14)":"rgba(200,91,130,0.18)"}`, boxShadow:!canShoot?"none":`0 6px 26px ${acc}80`, cursor:!canShoot?"not-allowed":"pointer", transition:"all 0.2s", display:"flex", alignItems:"center", justifyContent:"center" }}
+          onMouseEnter={e=>{ if(canShoot) e.currentTarget.style.transform="scale(1.08)" }}
           onMouseLeave={e=>{ e.currentTarget.style.transform="" }}
         >
           <div style={{ width:28, height:28, borderRadius:"50%", background:"rgba(255,255,255,0.92)" }}/>
@@ -1118,8 +1282,9 @@ function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
 // REVEAL SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RevealScreen({ stripUrl, isRevealing, onDownload, onShare, onStartAgain }:{
-  stripUrl:string; isRevealing:boolean; onDownload:()=>void; onShare:()=>void; onStartAgain:()=>void
+function RevealScreen({ stripUrl, isRevealing, downloadStatus, onDownload, onShare, onStartAgain }:{
+  stripUrl:string; isRevealing:boolean; downloadStatus:"idle"|"working"|"done"|"error";
+  onDownload:()=>void; onShare:()=>void; onStartAgain:()=>void
 }) {
   const [dots,   setDots]    = useState(".")
   const [showStrip, setShow] = useState(false)
@@ -1162,8 +1327,8 @@ function RevealScreen({ stripUrl, isRevealing, onDownload, onShare, onStartAgain
 
             {/* Actions */}
             <div style={{ display:"flex", flexWrap:"wrap", gap:12, justifyContent:"center", marginTop:6 }}>
-              <button onClick={onDownload} style={{ display:"flex", alignItems:"center", gap:8, padding:"13px 28px", borderRadius:50, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:15, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.42)" }}>
-                <Download size={15}/>Download Strip
+              <button disabled={downloadStatus==="working"} onClick={onDownload} style={{ display:"flex", alignItems:"center", gap:8, padding:"13px 28px", borderRadius:50, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:15, border:"none", cursor:downloadStatus==="working"?"wait":"pointer", opacity:downloadStatus==="working"?.72:1, boxShadow:"0 6px 24px rgba(200,91,130,0.42)" }}>
+                <Download size={15}/>{downloadStatus==="working"?"Preparing…":"Download Strip"}
               </button>
               <button onClick={onShare} style={{ display:"flex", alignItems:"center", gap:8, padding:"13px 26px", borderRadius:50, background:"transparent", border:"1.5px solid rgba(200,91,130,0.35)", color:"#C85B82", fontFamily:"'Nunito',sans-serif", fontWeight:600, fontSize:15, cursor:"pointer" }}>
                 <Share2 size={15}/>Share
@@ -1172,6 +1337,11 @@ function RevealScreen({ stripUrl, isRevealing, onDownload, onShare, onStartAgain
                 <RotateCcw size={14}/>Start Again
               </button>
             </div>
+            {downloadStatus!=="idle"&&downloadStatus!=="working"&&(
+              <p style={{ margin:0, fontSize:12, color:downloadStatus==="error"?"#dc2626":"#9B7B90" }}>
+                {downloadStatus==="done"?"Downloaded directly to your device — nothing was uploaded.":"Download failed. Please try again."}
+              </p>
+            )}
 
             {/* GIF teaser */}
             <div style={{ marginTop:10, padding:"14px 22px", borderRadius:14, background:"rgba(200,91,130,0.05)", border:"1px dashed rgba(200,91,130,0.22)", maxWidth:360 }}>
@@ -1208,6 +1378,7 @@ export default function App() {
   const [tipIdx,  setTipIdx]  = useState(0)
   const [stripUrl,setStripUrl]= useState("")
   const [revealing,setRevealing]=useState(false)
+  const [downloadStatus,setDownloadStatus]=useState<"idle"|"working"|"done"|"error">("idle")
   const peerRef=useRef<Peer|null>(null)
   const dataRef=useRef<DataConnection|null>(null)
   const mediaRef=useRef<MediaConnection|null>(null)
@@ -1395,10 +1566,22 @@ export default function App() {
   const handleStartAgain=()=>{
     dataRef.current?.close(); mediaRef.current?.close(); peerRef.current?.destroy()
     stream?.getTracks().forEach(track=>track.stop())
-    setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false)
+    setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle")
     setRemoteStream(null); setCaptureAt(null); setStream(null)
     window.history.replaceState({},"",window.location.pathname)
     setScreen("landing")
+  }
+
+  const handleDownload=async()=>{
+    if(!stripUrl||downloadStatus==="working") return
+    setDownloadStatus("working")
+    try{
+      await downloadStrip(stripUrl)
+      setDownloadStatus("done")
+    }catch(error){
+      console.error("Strip download failed",error)
+      setDownloadStatus("error")
+    }
   }
 
   return (
@@ -1420,7 +1603,19 @@ export default function App() {
         )}
         {screen==="select"   && <SelectScreen photos={photos} selected={selected} layout={layout} onToggle={toggleSelect} onContinue={()=>navigate("customize")}/>} 
         {screen==="customize"&& <CustomizeScreen photos={photos} selectedIndices={selected} layout={layout} onDone={handleCustomizeDone}/>}
-        {screen==="reveal"   && <RevealScreen stripUrl={stripUrl} isRevealing={revealing} onDownload={()=>{ const a=document.createElement("a"); a.href=stripUrl; a.download=`duet-${Date.now()}.png`; a.click() }} onShare={()=>{ if(navigator.share) navigator.share({title:"Our duet photo strip",text:"Look what we made together ♡"}).catch(()=>{}); else navigator.clipboard.writeText(window.location.href).catch(()=>{}) }} onStartAgain={handleStartAgain}/>} 
+        {screen==="reveal"&&(
+          <RevealScreen
+            stripUrl={stripUrl}
+            isRevealing={revealing}
+            downloadStatus={downloadStatus}
+            onDownload={handleDownload}
+            onShare={()=>{
+              if(navigator.share) navigator.share({title:"Our duet photo strip",text:"Look what we made together ♡"}).catch(()=>{})
+              else navigator.clipboard.writeText(window.location.href).catch(()=>{})
+            }}
+            onStartAgain={handleStartAgain}
+          />
+        )}
       </div>
     </>
   )
