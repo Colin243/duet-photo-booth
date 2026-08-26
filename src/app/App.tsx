@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback, type MutableRefObject } from "react"
 import Peer, { type DataConnection, type MediaConnection } from "peerjs"
-import { FilesetResolver, ImageSegmenter } from "@mediapipe/tasks-vision"
+import {
+  FilesetResolver, PoseLandmarker, HandLandmarker,
+  type NormalizedLandmark,
+} from "@mediapipe/tasks-vision"
 import { downloadStrip } from "../lib/downloadStrip"
 import {
   Camera, Download, Share2, RotateCcw, Check, Copy, X,
@@ -335,6 +338,90 @@ function drawVignette(ctx:CanvasRenderingContext2D, W:number, H:number, strength
 
 type PersonBounds={ x:number; y:number; width:number; height:number }
 
+function renderLandmarkSupport(
+  supportCanvas:HTMLCanvasElement,
+  pose:NormalizedLandmark[],
+  hands:NormalizedLandmark[][]
+) {
+  const ctx=supportCanvas.getContext("2d")!
+  const point=(landmark:NormalizedLandmark)=>({x:landmark.x*supportCanvas.width,y:landmark.y*supportCanvas.height})
+  ctx.clearRect(0,0,supportCanvas.width,supportCanvas.height)
+  ctx.save()
+  ctx.globalCompositeOperation="source-over"
+  ctx.lineCap="round"; ctx.lineJoin="round"
+  ctx.filter="blur(1.2px)"
+
+  // Reinforce arms through the pose skeleton so fast elbow and wrist movement
+  // stays attached to the body segmentation mask.
+  ctx.strokeStyle="rgba(255,255,255,.72)"
+  ctx.lineWidth=Math.max(6,supportCanvas.width*.025)
+  ;[[11,13],[13,15],[12,14],[14,16]].forEach(([start,end])=>{
+    const a=pose[start], b=pose[end]
+    if(!a||!b||a.visibility<.5||b.visibility<.5) return
+    const from=point(a), to=point(b)
+    ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke()
+  })
+
+  // Hand Landmarker provides 21 points per hand. Fill the palm and connect all
+  // finger bones, then union the soft result into the body matte.
+  ctx.strokeStyle="rgba(255,255,255,.9)"
+  ctx.fillStyle="rgba(255,255,255,.86)"
+  ctx.lineWidth=Math.max(3,supportCanvas.width*.009)
+  hands.forEach(hand=>{
+    const palm=[0,5,9,13,17].map(index=>hand[index]).filter(Boolean)
+    if(palm.length===5){
+      const first=point(palm[0]); ctx.beginPath(); ctx.moveTo(first.x,first.y)
+      palm.slice(1).forEach(landmark=>{ const p=point(landmark); ctx.lineTo(p.x,p.y) })
+      ctx.closePath(); ctx.fill()
+    }
+    HandLandmarker.HAND_CONNECTIONS.forEach(({start,end})=>{
+      const a=hand[start], b=hand[end]
+      if(!a||!b) return
+      const from=point(a), to=point(b)
+      ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke()
+    })
+    hand.forEach(landmark=>{
+      const p=point(landmark)
+      ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(2.5,supportCanvas.width*.006),0,Math.PI*2); ctx.fill()
+    })
+  })
+  ctx.restore()
+}
+
+function boundsFromTracking(
+  pose:NormalizedLandmark[],
+  hands:NormalizedLandmark[][],
+  fallback:PersonBounds|null
+):PersonBounds|null {
+  const points=[
+    ...pose.filter(landmark=>landmark.visibility>.22),
+    ...hands.flat(),
+  ].filter(landmark=>Number.isFinite(landmark.x)&&Number.isFinite(landmark.y))
+  if(!points.length) return fallback
+
+  const minX=Math.min(...points.map(point=>point.x)), maxX=Math.max(...points.map(point=>point.x))
+  const minY=Math.min(...points.map(point=>point.y)), maxY=Math.max(...points.map(point=>point.y))
+  const rawW=Math.max(.1,maxX-minX), rawH=Math.max(.1,maxY-minY)
+  // Keep enough breathing room for a newly raised hand, while allowing the
+  // tracked person to fill the booth instead of looking like a webcam tile.
+  const width=Math.min(1,Math.max(.68,rawW*1.42))
+  const height=Math.min(1,Math.max(.8,rawH*1.3))
+  const centerX=(minX+maxX)/2
+  const centerY=(minY+maxY)/2
+  const next={
+    x:Math.max(0,Math.min(1-width,centerX-width/2)),
+    y:Math.max(0,Math.min(1-height,centerY-height*.46)),
+    width,height,
+  }
+  if(!fallback) return next
+  return {
+    x:fallback.x*.64+next.x*.36,
+    y:fallback.y*.64+next.y*.36,
+    width:fallback.width*.64+next.width*.36,
+    height:fallback.height*.64+next.height*.36,
+  }
+}
+
 function drawPersonCutout(
   ctx:CanvasRenderingContext2D,
   video:HTMLVideoElement,
@@ -393,8 +480,8 @@ function drawBoothFrame(
   ctx.clearRect(0,0,W,H)
   drawThemeBg(ctx,themeId,W,H)
 
-  const pW=W*.48, pH=H*.88, pY=H*.055
-  const maxGap=W*.045, minGap=-pW*.34
+  const pW=W*.52, pH=H*.92, pY=H*.025
+  const maxGap=W*.01, minGap=-pW*.42
   const gap=maxGap-(proximity/100)*(maxGap-minGap)
   const youX=W/2-pW-gap/2
   const partX=W/2+gap/2
@@ -781,14 +868,18 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
   const partnerRef  = useRef<HTMLVideoElement>(null)
   const previewRef  = useRef<HTMLCanvasElement>(null)
   const captureRef  = useRef<HTMLCanvasElement>(null)
-  const segmenterRef= useRef<ImageSegmenter|null>(null)
+  const poseTrackerRef=useRef<PoseLandmarker|null>(null)
+  const handTrackerRef=useRef<HandLandmarker|null>(null)
   const localMaskRef= useRef(document.createElement("canvas"))
   const partnerMaskRef=useRef(document.createElement("canvas"))
+  const localSupportRef=useRef(document.createElement("canvas"))
+  const partnerSupportRef=useRef(document.createElement("canvas"))
   const localScratchRef=useRef(document.createElement("canvas"))
   const partnerScratchRef=useRef(document.createElement("canvas"))
   const localBoundsRef=useRef<PersonBounds|null>(null)
   const partnerBoundsRef=useRef<PersonBounds|null>(null)
   const lastSegmentRef=useRef(0)
+  const trackerTimestampRef=useRef(0)
   const segmentBusyRef=useRef(false)
   const rafRef      = useRef<number>()
   const timerRef    = useRef<ReturnType<typeof setInterval>>()
@@ -824,14 +915,28 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
     ;(async()=>{
       try{
         const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm")
-        const segmenter=await ImageSegmenter.createFromOptions(vision,{
-          baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite" },
-          runningMode:"VIDEO",
-          outputConfidenceMasks:true,
-          outputCategoryMask:false,
-        })
-        if(cancelled){ segmenter.close(); return }
-        segmenterRef.current=segmenter
+        const [poseTracker,handTracker]=await Promise.all([
+          PoseLandmarker.createFromOptions(vision,{
+            baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task" },
+            runningMode:"VIDEO",
+            numPoses:1,
+            minPoseDetectionConfidence:.36,
+            minPosePresenceConfidence:.34,
+            minTrackingConfidence:.34,
+            outputSegmentationMasks:true,
+          }),
+          HandLandmarker.createFromOptions(vision,{
+            baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task" },
+            runningMode:"VIDEO",
+            numHands:2,
+            minHandDetectionConfidence:.55,
+            minHandPresenceConfidence:.5,
+            minTrackingConfidence:.5,
+          }),
+        ])
+        if(cancelled){ poseTracker.close(); handTracker.close(); return }
+        poseTrackerRef.current=poseTracker
+        handTrackerRef.current=handTracker
         setSegmentStatus("ready")
       }catch(error){
         console.error("Person segmentation could not start",error)
@@ -840,56 +945,43 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
     })()
     return ()=>{
       cancelled=true
-      segmenterRef.current?.close()
-      segmenterRef.current=null
+      poseTrackerRef.current?.close()
+      handTrackerRef.current?.close()
+      poseTrackerRef.current=null
+      handTrackerRef.current=null
     }
   },[])
 
-  const updatePersonMask=useCallback((video:HTMLVideoElement,maskCanvas:HTMLCanvasElement,boundsRef:MutableRefObject<PersonBounds|null>,onFirstMask:()=>void,timestamp:number)=>{
-    const segmenter=segmenterRef.current
-    if(!segmenter||video.readyState<2||!video.videoWidth) return
-    segmenter.segmentForVideo(video,timestamp,result=>{
-      const masks=result.confidenceMasks
-      const mask=masks?.[masks.length-1]
+  const updatePersonMask=useCallback((video:HTMLVideoElement,maskCanvas:HTMLCanvasElement,supportCanvas:HTMLCanvasElement,boundsRef:MutableRefObject<PersonBounds|null>,onFirstMask:()=>void,timestamp:number)=>{
+    const poseTracker=poseTrackerRef.current, handTracker=handTrackerRef.current
+    if(!poseTracker||!handTracker||video.readyState<2||!video.videoWidth) return
+    const hands=handTracker.detectForVideo(video,timestamp).landmarks
+    poseTracker.detectForVideo(video,timestamp,result=>{
+      const pose=result.landmarks[0]||[]
+      const mask=result.segmentationMasks?.[0]
       if(!mask) return
       const width=mask.width, height=mask.height
       if(maskCanvas.width!==width) maskCanvas.width=width
       if(maskCanvas.height!==height) maskCanvas.height=height
+      if(supportCanvas.width!==width) supportCanvas.width=width
+      if(supportCanvas.height!==height) supportCanvas.height=height
+      renderLandmarkSupport(supportCanvas,pose,hands)
       const values=mask.getAsFloat32Array()
+      const supportPixels=supportCanvas.getContext("2d")!.getImageData(0,0,width,height).data
       const pixels=new Uint8ClampedArray(width*height*4)
-      let minX=width, minY=height, maxX=0, maxY=0, trackedPixels=0
       for(let i=0;i<values.length;i++){
-        const normalized=Math.max(0,Math.min(1,(values[i]-.18)/.55))
-        const feathered=normalized*normalized*(3-2*normalized)
-        if(values[i]>.42){
-          const px=i%width, py=Math.floor(i/width)
-          minX=Math.min(minX,px); minY=Math.min(minY,py)
-          maxX=Math.max(maxX,px); maxY=Math.max(maxY,py); trackedPixels++
-        }
         const p=i*4
+        // Landmarks only lower the segmentation threshold around a likely limb;
+        // they never punch an opaque skeleton-shaped hole into the background.
+        const landmarkSupport=supportPixels[p+3]/255
+        const threshold=.18-landmarkSupport*.1
+        const normalized=Math.max(0,Math.min(1,(values[i]-threshold)/.5))
+        const feathered=normalized*normalized*(3-2*normalized)
         pixels[p]=pixels[p+1]=pixels[p+2]=255
         pixels[p+3]=Math.round(feathered*255)
       }
       maskCanvas.getContext("2d")!.putImageData(new ImageData(pixels,width,height),0,0)
-      if(trackedPixels>width*height*.015){
-        const rawX=minX/width, rawY=minY/height
-        const rawW=(maxX-minX+1)/width, rawH=(maxY-minY+1)/height
-        const next={
-          x:Math.max(0,rawX-rawW*.13),
-          y:Math.max(0,rawY-rawH*.08),
-          width:Math.min(1,rawW*1.26),
-          height:Math.min(1,rawH*1.12),
-        }
-        next.width=Math.min(next.width,1-next.x)
-        next.height=Math.min(next.height,1-next.y)
-        const previous=boundsRef.current
-        boundsRef.current=previous?{
-          x:previous.x*.72+next.x*.28,
-          y:previous.y*.72+next.y*.28,
-          width:previous.width*.72+next.width*.28,
-          height:previous.height*.72+next.height*.28,
-        }:next
-      }
+      boundsRef.current=boundsFromTracking(pose,hands,boundsRef.current)
       onFirstMask()
     })
   },[])
@@ -901,16 +993,18 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
     const ctx=canvas.getContext("2d")!
     const loop=()=>{
       const now=performance.now()
-      if(segmenterRef.current&&!segmentBusyRef.current&&now-lastSegmentRef.current>110){
+      if(poseTrackerRef.current&&handTrackerRef.current&&!segmentBusyRef.current&&now-lastSegmentRef.current>82){
         segmentBusyRef.current=true
         try{
-          updatePersonMask(video,localMaskRef.current,localBoundsRef,()=>{
+          const localTimestamp=Math.max(Math.floor(now),trackerTimestampRef.current+2)
+          updatePersonMask(video,localMaskRef.current,localSupportRef.current,localBoundsRef,()=>{
             if(!localMaskReadyRef.current){ localMaskReadyRef.current=true; setLocalMaskReady(true) }
-          },now)
+          },localTimestamp)
           const partner=partnerRef.current
-          if(partner&&remoteStream) updatePersonMask(partner,partnerMaskRef.current,partnerBoundsRef,()=>{
+          if(partner&&remoteStream) updatePersonMask(partner,partnerMaskRef.current,partnerSupportRef.current,partnerBoundsRef,()=>{
             if(!partnerMaskReadyRef.current){ partnerMaskReadyRef.current=true; setPartnerMaskReady(true) }
-          },now+.01)
+          },localTimestamp+1)
+          trackerTimestampRef.current=localTimestamp+1
           lastSegmentRef.current=now
         }catch(error){ console.warn("Person mask frame skipped",error) }
         finally{ segmentBusyRef.current=false }
@@ -989,8 +1083,8 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
 
       {/* Canvas */}
       <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"0 14px", gap:14, position:"relative", zIndex:10 }}>
-        <div style={{ position:"relative", borderRadius:22, overflow:"hidden", boxShadow:isDark?`0 0 0 2px ${theme.accent}44,0 18px 60px rgba(0,0,0,0.65)`:"0 10px 50px rgba(0,0,0,0.13)", maxWidth:"100%", width:"100%" }}>
-          <canvas ref={previewRef} width={760} height={500} style={{ display:"block", width:"100%", maxWidth:760, aspectRatio:"760/500", borderRadius:22 }}/>
+        <div style={{ position:"relative", borderRadius:22, overflow:"hidden", boxShadow:isDark?`0 0 0 2px ${theme.accent}44,0 18px 60px rgba(0,0,0,0.65)`:"0 10px 50px rgba(0,0,0,0.13)", maxWidth:760, width:"100%" }}>
+          <canvas ref={previewRef} width={760} height={500} style={{ display:"block", width:"100%", aspectRatio:"760/500", borderRadius:22 }}/>
 
           {/* You / Partner labels */}
           <div style={{ position:"absolute", bottom:14, left:"17%", transform:"translateX(-50%)", background:"rgba(0,0,0,0.44)", backdropFilter:"blur(6px)", borderRadius:20, padding:"4px 12px" }}>
@@ -1026,7 +1120,7 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
         </div>
 
         <div style={{ fontSize:11, color:segmentStatus==="error"?"#ef4444":sub, fontWeight:600 }}>
-          {segmentStatus==="error"?"Person isolation could not load — refresh to retry":masksReady?"Both people isolated ✓":"Preparing person cutouts…"}
+          {segmentStatus==="error"?"Body tracking could not load — refresh to retry":masksReady?"Bodies and hands tracked ✓":"Preparing body and hand tracking…"}
         </div>
 
         {/* Thumbnails */}
@@ -1043,7 +1137,7 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
 
       {/* Controls */}
       <div style={{ position:"relative", zIndex:10, padding:"16px 24px 36px", display:"flex", alignItems:"center", justifyContent:"center", gap:20 }}>
-        <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{!remoteStream?"Waiting for partner’s live camera":!masksReady?"Removing both room backgrounds":photos.length<MAX?`${MAX-photos.length} moment${MAX-photos.length===1?"":"s"} left`:"All ten captured"}</div>
+        <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{!remoteStream?"Waiting for partner’s live camera":!masksReady?"Tracking bodies, arms, and hands":photos.length<MAX?`${MAX-photos.length} moment${MAX-photos.length===1?"":"s"} left`:"All ten captured"}</div>
 
         {/* Shutter */}
         <button

@@ -22,7 +22,7 @@ Open the local URL shown by Vite. Camera access requires `localhost` or HTTPS.
 - Synchronized layout, theme, navigation, and shutter countdown
 - Classic and wide strip layouts
 - Seven canvas-rendered booth themes
-- On-device MediaPipe person segmentation that removes both room backgrounds
+- On-device MediaPipe pose and hand tracking merged into full-person masks
 - Browser camera capture with a five-second countdown
 - Ten-shot contact sheet and ordered selection
 - Filters, frames, stickers, names, date, and photo repositioning
@@ -30,7 +30,7 @@ Open the local URL shown by Vite. Camera access requires `localhost` or HTTPS.
 
 ## Realtime architecture
 
-Vercel hosts the Vite application. PeerJS Cloud brokers the initial connection; video, audio, and state updates then travel directly between browsers over encrypted WebRTC. MediaPipe creates both person masks on-device, so camera frames are not sent to a segmentation service. Captured photos and completed strips stay in browser memory; downloads go directly from the webpage to the user's device.
+Vercel hosts the Vite application. PeerJS Cloud brokers the initial connection; video, audio, and state updates then travel directly between browsers over encrypted WebRTC. MediaPipe creates pose segmentation masks and tracks 33 body landmarks plus 21 landmarks per detected hand on-device. The limb and hand geometry is merged into each matte so movement remains visible without sending camera frames to a segmentation service. Captured photos and completed strips stay in browser memory; downloads go directly from the webpage to the user's device.
 
 For a larger production launch, self-host PeerServer and configure a TURN relay so connections also work across restrictive corporate or carrier networks.
 
