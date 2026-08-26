@@ -349,23 +349,35 @@ function drawBoothFrame(
   const partX=W/2+gap/2
 
   if(video.readyState>=2) {
-    // You — left
+    // Your live feed behaves like a physical photo-booth mirror.
     ctx.save(); ctx.beginPath(); rRect(ctx,youX,pY,pW,pH,8); ctx.clip()
+    ctx.translate(youX*2+pW,0); ctx.scale(-1,1)
     ctx.drawImage(video,youX,pY,pW,pH); ctx.restore()
 
-    // Partner — right. Falls back to the mirrored local feed until WebRTC connects.
-    const partner = partnerVideo?.readyState && partnerVideo.readyState>=2 ? partnerVideo : video
-    ctx.save(); ctx.beginPath(); rRect(ctx,partX,pY,pW,pH,8); ctx.clip()
-    ctx.translate(partX*2+pW,0); ctx.scale(-1,1)
-    ctx.drawImage(partner,partX,pY,pW,pH); ctx.restore()
+    // The partner position only ever shows the real remote WebRTC feed.
+    const partnerReady=Boolean(partnerVideo&&partnerVideo.readyState>=2)
+    if(partnerReady&&partnerVideo){
+      ctx.save(); ctx.beginPath(); rRect(ctx,partX,pY,pW,pH,8); ctx.clip()
+      ctx.translate(partX*2+pW,0); ctx.scale(-1,1)
+      ctx.drawImage(partnerVideo,partX,pY,pW,pH); ctx.restore()
+    } else {
+      ctx.save(); ctx.beginPath(); rRect(ctx,partX,pY,pW,pH,8)
+      ctx.fillStyle="rgba(255,255,255,.24)"; ctx.fill()
+      ctx.setLineDash([8,8]); ctx.strokeStyle="rgba(255,255,255,.58)"; ctx.lineWidth=2; ctx.stroke()
+      ctx.setLineDash([]); ctx.textAlign="center"; ctx.fillStyle="rgba(255,255,255,.92)"
+      ctx.font="600 15px Nunito, sans-serif"; ctx.fillText("Waiting for your partner",partX+pW/2,pY+pH/2-5)
+      ctx.font="500 11px Nunito, sans-serif"; ctx.fillStyle="rgba(255,255,255,.68)"
+      ctx.fillText("Their live camera will appear here",partX+pW/2,pY+pH/2+17); ctx.restore()
+    }
 
     // Soft overlap blend when very close
-    if(proximity>72 && gap<0){
+    if(partnerReady&&partnerVideo&&proximity>72 && gap<0){
       const ovX=Math.max(youX,partX), ovW=youX+pW-partX
       if(ovW>2){
         ctx.save(); ctx.beginPath(); rRect(ctx,ovX,pY,ovW,pH,0); ctx.clip()
         ctx.globalAlpha=0.38; ctx.globalCompositeOperation="multiply"
-        ctx.drawImage(video,partX,pY,pW,pH); ctx.restore()
+        ctx.translate(partX*2+pW,0); ctx.scale(-1,1)
+        ctx.drawImage(partnerVideo,partX,pY,pW,pH); ctx.restore()
       }
     }
 
@@ -825,7 +837,7 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
             <span style={{ fontSize:11, color:"#fff", fontWeight:600 }}>You</span>
           </div>
           <div style={{ position:"absolute", bottom:14, right:"14%", transform:"translateX(50%)", background:"rgba(0,0,0,0.44)", backdropFilter:"blur(6px)", borderRadius:20, padding:"4px 12px" }}>
-            <span style={{ fontSize:11, color:"#fff", fontWeight:600 }}>Partner</span>
+            <span style={{ fontSize:11, color:"#fff", fontWeight:600 }}>{remoteStream?"Partner · live":"Partner · connecting"}</span>
           </div>
 
           {/* Countdown */}
@@ -867,15 +879,15 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
 
       {/* Controls */}
       <div style={{ position:"relative", zIndex:10, padding:"16px 24px 36px", display:"flex", alignItems:"center", justifyContent:"center", gap:20 }}>
-        <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{photos.length<MAX?`${MAX-photos.length} moment${MAX-photos.length===1?"":"s"} left`:"All ten captured"}</div>
+        <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{!remoteStream?"Waiting for partner’s live camera":photos.length<MAX?`${MAX-photos.length} moment${MAX-photos.length===1?"":"s"} left`:"All ten captured"}</div>
 
         {/* Shutter */}
         <button
-          onClick={onCaptureRequest}
-          disabled={countdown!==null||photos.length>=MAX}
+          onClick={remoteStream?onCaptureRequest:undefined}
+          disabled={!remoteStream||countdown!==null||photos.length>=MAX}
           aria-label="Capture photo"
-          style={{ width:72, height:72, borderRadius:"50%", background:countdown!==null||photos.length>=MAX?(isDark?"rgba(255,255,255,0.14)":"#e8e8e8"):acc, border:`4px solid ${isDark?"rgba(255,255,255,0.14)":"rgba(200,91,130,0.18)"}`, boxShadow:countdown!==null||photos.length>=MAX?"none":`0 6px 26px ${acc}80`, cursor:countdown!==null||photos.length>=MAX?"not-allowed":"pointer", transition:"all 0.2s", display:"flex", alignItems:"center", justifyContent:"center" }}
-          onMouseEnter={e=>{ if(countdown===null&&photos.length<MAX) e.currentTarget.style.transform="scale(1.08)" }}
+          style={{ width:72, height:72, borderRadius:"50%", background:!remoteStream||countdown!==null||photos.length>=MAX?(isDark?"rgba(255,255,255,0.14)":"#e8e8e8"):acc, border:`4px solid ${isDark?"rgba(255,255,255,0.14)":"rgba(200,91,130,0.18)"}`, boxShadow:!remoteStream||countdown!==null||photos.length>=MAX?"none":`0 6px 26px ${acc}80`, cursor:!remoteStream||countdown!==null||photos.length>=MAX?"not-allowed":"pointer", transition:"all 0.2s", display:"flex", alignItems:"center", justifyContent:"center" }}
+          onMouseEnter={e=>{ if(remoteStream&&countdown===null&&photos.length<MAX) e.currentTarget.style.transform="scale(1.08)" }}
           onMouseLeave={e=>{ e.currentTarget.style.transform="" }}
         >
           <div style={{ width:28, height:28, borderRadius:"50%", background:"rgba(255,255,255,0.92)" }}/>
