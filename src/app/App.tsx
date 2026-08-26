@@ -137,7 +137,7 @@ const THEMES: {
   id:ThemeId; name:string; emoji:string; tagline:string;
   previewBg:string; dark:boolean; accent:string
 }[] = [
-  { id:"classic",  name:"Classic",         emoji:"✦", tagline:"Timeless white booth",    previewBg:"linear-gradient(160deg,#fff5f8,#fce4ec)",          dark:false, accent:"#C85B82" },
+  { id:"classic",  name:"Classic",         emoji:"✦", tagline:"Soft daylight booth",      previewBg:"linear-gradient(160deg,#ffffff,#dceeff)",          dark:false, accent:"#C85B82" },
   { id:"washer",   name:"Washing Machine", emoji:"◎", tagline:"Inside the drum",          previewBg:"linear-gradient(160deg,#e3f2fd,#bbdefb)",          dark:false, accent:"#1976D2" },
   { id:"elevator", name:"Elevator",        emoji:"↕", tagline:"Mirrored walls, going up",previewBg:"linear-gradient(180deg,#c8c8c8,#f0f0f0 50%,#c8c8c8)",dark:false,accent:"#546E7A"},
   { id:"airplane", name:"Airplane",        emoji:"✈️", tagline:"Up in the clouds",        previewBg:"linear-gradient(160deg,#81d4fa,#e1f5fe 65%,#fff)",  dark:false, accent:"#0288D1" },
@@ -215,7 +215,7 @@ function mkLinear(ctx:CanvasRenderingContext2D, x0:number,y0:number,x1:number,y1
 
 function drawThemeBg(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:number) {
   switch(id) {
-    case "classic":  ctx.fillStyle = mkLinear(ctx,0,0,W,H,[[0,"#fff5f8"],[1,"#fce4ec"]]); break
+    case "classic":  ctx.fillStyle = mkLinear(ctx,0,0,W,H,[[0,"#ffffff"],[0.5,"#edf7ff"],[1,"#dceeff"]]); break
     case "washer":   ctx.fillStyle = mkLinear(ctx,0,0,W,H,[[0,"#e3f2fd"],[1,"#bbdefb"]]); break
     case "elevator": ctx.fillStyle = mkLinear(ctx,0,0,0,H,[[0,"#b8b8b8"],[0.35,"#eeeeee"],[0.65,"#eeeeee"],[1,"#b8b8b8"]]); break
     case "airplane": ctx.fillStyle = mkLinear(ctx,0,0,0,H,[[0,"#81d4fa"],[0.6,"#e1f5fe"],[1,"#ffffff"]]); break
@@ -228,6 +228,19 @@ function drawThemeBg(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:numbe
 
 function drawThemeDetails(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:number) {
   switch(id) {
+    case "classic": {
+      // A quiet studio wall and floor give the plain scene depth while keeping
+      // the attention on the two people.
+      const glow=ctx.createRadialGradient(W/2,H*.34,0,W/2,H*.34,W*.56)
+      glow.addColorStop(0,"rgba(255,255,255,.78)")
+      glow.addColorStop(1,"rgba(255,255,255,0)")
+      ctx.fillStyle=glow; ctx.fillRect(0,0,W,H)
+      const floor=ctx.createLinearGradient(0,H*.76,0,H)
+      floor.addColorStop(0,"rgba(184,213,235,0)")
+      floor.addColorStop(1,"rgba(184,213,235,.22)")
+      ctx.fillStyle=floor; ctx.fillRect(0,H*.76,W,H*.24)
+      break
+    }
     case "elevator": {
       // Ceiling lamp
       const lg = ctx.createLinearGradient(0,0,0,H*0.14)
@@ -400,25 +413,22 @@ function boundsFromTracking(
   if(!points.length) return fallback
 
   const minX=Math.min(...points.map(point=>point.x)), maxX=Math.max(...points.map(point=>point.x))
-  const minY=Math.min(...points.map(point=>point.y)), maxY=Math.max(...points.map(point=>point.y))
-  const rawW=Math.max(.1,maxX-minX), rawH=Math.max(.1,maxY-minY)
-  // Keep enough breathing room for a newly raised hand, while allowing the
-  // tracked person to fill the booth instead of looking like a webcam tile.
-  const width=Math.min(1,Math.max(.68,rawW*1.42))
-  const height=Math.min(1,Math.max(.8,rawH*1.3))
+  const rawW=Math.max(.1,maxX-minX)
+  // Keep the entire vertical camera frame available. This prevents a raised
+  // hand from being clipped when its landmark reaches or leaves the top edge.
+  const width=Math.min(1,Math.max(.76,rawW+.24))
   const centerX=(minX+maxX)/2
-  const centerY=(minY+maxY)/2
   const next={
     x:Math.max(0,Math.min(1-width,centerX-width/2)),
-    y:Math.max(0,Math.min(1-height,centerY-height*.46)),
-    width,height,
+    y:0,
+    width,height:1,
   }
   if(!fallback) return next
   return {
     x:fallback.x*.64+next.x*.36,
-    y:fallback.y*.64+next.y*.36,
+    y:0,
     width:fallback.width*.64+next.width*.36,
-    height:fallback.height*.64+next.height*.36,
+    height:1,
   }
 }
 
