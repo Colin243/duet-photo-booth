@@ -141,7 +141,9 @@ contains application code and documentation only.
 ## Deployment
 
 - Repository: https://github.com/Colin243/duet-photo-booth
-- Production: https://duet-live-sigma.vercel.app
+- Vercel project: `keepsake-booth`
+- Production: https://keepsake-booth.vercel.app
+- Legacy alias retained for existing invitations: https://duet-live-sigma.vercel.app
 - Realistic-theme implementation commit: `c118247`
 
 The Vercel project tracks the repository's `main` branch, so an accepted push

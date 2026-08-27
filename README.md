@@ -4,7 +4,7 @@ A responsive virtual photo-booth MVP for couples in different places.
 
 ## Live app
 
-https://duet-live-sigma.vercel.app
+https://keepsake-booth.vercel.app
 
 ## Development record
 
@@ -38,7 +38,7 @@ Open the local URL shown by Vite. Camera access requires `localhost` or HTTPS.
 
 ## Realtime architecture
 
-Vercel hosts the Vite application. PeerJS Cloud brokers the initial connection; video, audio, and state updates then travel directly between browsers over encrypted WebRTC. MediaPipe creates pose segmentation masks and tracks 33 body landmarks plus 21 landmarks per detected hand on-device. The limb and hand geometry is merged into each matte so movement remains visible without sending camera frames to a segmentation service. Captured photos and completed strips stay in browser memory; downloads go directly from the webpage to the user's device.
+Vercel hosts the Vite application as **Keepsake Booth**. PeerJS Cloud brokers the initial connection; video, audio, and state updates then travel directly between browsers over encrypted WebRTC. MediaPipe creates pose segmentation masks and tracks 33 body landmarks plus 21 landmarks per detected hand on-device. The limb and hand geometry is merged into each matte so movement remains visible without sending camera frames to a segmentation service. Captured photos and completed strips stay in browser memory; downloads go directly from the webpage to the user's device.
 
 For a larger production launch, self-host PeerServer and configure a TURN relay so connections also work across restrictive corporate or carrier networks.
 
