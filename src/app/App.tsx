@@ -110,7 +110,7 @@ const GLOBAL_CSS = `
 
 type Screen = "landing"|"room"|"layout"|"theme"|"ready"|"booth"|"select"|"customize"|"reveal"
 type Layout  = "classic"|"wide"
-type ThemeId = "classic"|"washer"|"elevator"|"cctv"
+type ThemeId = "classic"|"washer"|"elevator"
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
 
 type SyncMessage =
@@ -137,11 +137,16 @@ const THEMES: {
   id:ThemeId; name:string; emoji:string; tagline:string;
   previewBg:string; dark:boolean; accent:string
 }[] = [
-  { id:"classic",  name:"Classic",         emoji:"✦", tagline:"Soft daylight booth",      previewBg:"linear-gradient(160deg,#ffffff,#dceeff)",          dark:false, accent:"#C85B82" },
-  { id:"washer",   name:"Laundromat",      emoji:"◎", tagline:"Retro wash & pose",        previewBg:"linear-gradient(160deg,#dce7e7,#f4efe4)",          dark:false, accent:"#3B7D7A" },
-  { id:"elevator", name:"Elevator",        emoji:"↕", tagline:"Brushed steel, going up", previewBg:"linear-gradient(90deg,#7d8588,#d9dddc 50%,#7d8588)",dark:false,accent:"#455A64"},
-  { id:"cctv",     name:"CCTV",            emoji:"REC", tagline:"Caught on camera",        previewBg:"linear-gradient(160deg,#171b1c,#28302e)",          dark:true,  accent:"#B7C5BC" },
+  { id:"classic",  name:"Classic",      emoji:"✦",   tagline:"Soft daylight booth",       previewBg:"linear-gradient(160deg,#ffffff,#dceeff)", dark:false, accent:"#C85B82" },
+  { id:"washer",   name:"Washer Drum",   emoji:"◎",   tagline:"Peek in through the door",  previewBg:"url('/theme-assets/washer-drum.jpg') center/cover", dark:false, accent:"#52616A" },
+  { id:"elevator", name:"Elevator CCTV", emoji:"REC", tagline:"Caught inside the lift",    previewBg:"linear-gradient(rgba(8,18,20,.25),rgba(8,18,20,.25)),url('/theme-assets/elevator-cabin.jpg') center/cover", dark:true, accent:"#D8E3DE" },
 ]
+
+const THEME_IMAGE_PATHS:Partial<Record<ThemeId,string>>={
+  washer:"/theme-assets/washer-drum.jpg",
+  elevator:"/theme-assets/elevator-cabin.jpg",
+}
+const themeImageCache=new Map<string,HTMLImageElement>()
 
 const FILTERS: { id:FilterId; name:string; css:string }[] = [
   { id:"none",  name:"Natural", css:"none" },
@@ -210,129 +215,101 @@ function mkLinear(ctx:CanvasRenderingContext2D, x0:number,y0:number,x1:number,y1
   return g
 }
 
+function getThemeImage(id:ThemeId) {
+  const src=THEME_IMAGE_PATHS[id]
+  if(!src||typeof Image==="undefined") return null
+  let image=themeImageCache.get(src)
+  if(!image){
+    image=new Image()
+    image.decoding="async"
+    image.src=src
+    themeImageCache.set(src,image)
+  }
+  return image
+}
+
+function drawCoverImage(ctx:CanvasRenderingContext2D,image:HTMLImageElement,W:number,H:number) {
+  const scale=Math.max(W/image.naturalWidth,H/image.naturalHeight)
+  const width=image.naturalWidth*scale,height=image.naturalHeight*scale
+  ctx.drawImage(image,(W-width)/2,(H-height)/2,width,height)
+}
+
+function washerOpening(W:number,H:number) {
+  return {x:W*.495,y:H*.495,r:Math.min(W*.242,H*.37)}
+}
+
 function drawThemeBg(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:number) {
+  const image=getThemeImage(id)
+  if(image?.complete&&image.naturalWidth){
+    drawCoverImage(ctx,image,W,H)
+    if(id==="elevator"){
+      ctx.fillStyle="rgba(12,27,31,.18)";ctx.fillRect(0,0,W,H)
+    }
+    return
+  }
   switch(id) {
     case "classic":  ctx.fillStyle = mkLinear(ctx,0,0,W,H,[[0,"#ffffff"],[0.5,"#edf7ff"],[1,"#dceeff"]]); break
     case "washer":   ctx.fillStyle = mkLinear(ctx,0,0,W,H,[[0,"#dce7e7"],[0.55,"#f4f1e9"],[1,"#d5dcda"]]); break
     case "elevator": ctx.fillStyle = mkLinear(ctx,0,0,W,0,[[0,"#747d80"],[0.18,"#c7cdcd"],[0.5,"#eef0ef"],[0.82,"#c4caca"],[1,"#747d80"]]); break
-    case "cctv":     ctx.fillStyle = mkLinear(ctx,0,0,0,H,[[0,"#252b2b"],[1,"#101414"]]); break
   }
   ctx.fillRect(0,0,W,H)
 }
 
-function drawThemeDetails(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:number) {
-  switch(id) {
-    case "classic": {
-      // A quiet studio wall and floor give the plain scene depth while keeping
-      // the attention on the two people.
-      const glow=ctx.createRadialGradient(W/2,H*.34,0,W/2,H*.34,W*.56)
-      glow.addColorStop(0,"rgba(255,255,255,.78)")
-      glow.addColorStop(1,"rgba(255,255,255,0)")
-      ctx.fillStyle=glow; ctx.fillRect(0,0,W,H)
-      const floor=ctx.createLinearGradient(0,H*.76,0,H)
-      floor.addColorStop(0,"rgba(184,213,235,0)")
-      floor.addColorStop(1,"rgba(184,213,235,.22)")
-      ctx.fillStyle=floor; ctx.fillRect(0,H*.76,W,H*.24)
-      break
-    }
-    case "elevator": {
-      // Brushed metal wall panels and the dark seam of a real elevator door.
-      ctx.strokeStyle="rgba(50,58,60,.34)"; ctx.lineWidth=2
-      ;[.18,.5,.82].forEach(x=>{ctx.beginPath();ctx.moveTo(W*x,0);ctx.lineTo(W*x,H);ctx.stroke()})
-      ctx.fillStyle="rgba(35,42,44,.16)"; ctx.fillRect(W*.495,0,W*.01,H)
+function drawThemeDetails(ctx:CanvasRenderingContext2D,id:ThemeId,W:number,H:number) {
+  if(id!=="classic") return
+  const glow=ctx.createRadialGradient(W/2,H*.34,0,W/2,H*.34,W*.56)
+  glow.addColorStop(0,"rgba(255,255,255,.78)")
+  glow.addColorStop(1,"rgba(255,255,255,0)")
+  ctx.fillStyle=glow;ctx.fillRect(0,0,W,H)
+  const floor=ctx.createLinearGradient(0,H*.76,0,H)
+  floor.addColorStop(0,"rgba(184,213,235,0)")
+  floor.addColorStop(1,"rgba(184,213,235,.22)")
+  ctx.fillStyle=floor;ctx.fillRect(0,H*.76,W,H*.24)
+}
 
-      // Recessed fluorescent ceiling light.
-      const ceiling=ctx.createLinearGradient(0,0,0,H*.16)
-      ceiling.addColorStop(0,"rgba(255,255,244,.98)")
-      ceiling.addColorStop(1,"rgba(255,255,244,0)")
-      ctx.fillStyle=ceiling; ctx.fillRect(W*.24,0,W*.52,H*.16)
-
-      // Floor indicator and call direction.
-      ctx.fillStyle="rgba(17,21,22,.9)"; ctx.beginPath();rRect(ctx,W*.445,H*.025,W*.11,H*.085,6);ctx.fill()
-      ctx.fillStyle="#ef6c57";ctx.font="700 16px monospace";ctx.textAlign="center";ctx.fillText("▲ 12",W*.5,H*.082)
-
-      // Stainless handrail and wall mounts sit behind the people.
-      ctx.strokeStyle="rgba(45,53,55,.48)";ctx.lineWidth=9;ctx.lineCap="round"
-      ctx.beginPath();ctx.moveTo(W*.08,H*.72);ctx.lineTo(W*.92,H*.72);ctx.stroke()
-      ctx.strokeStyle="rgba(242,246,245,.7)";ctx.lineWidth=3
-      ctx.beginPath();ctx.moveTo(W*.08,H*.705);ctx.lineTo(W*.92,H*.705);ctx.stroke()
-
-      // Button panel on the right wall.
-      ctx.fillStyle="rgba(44,51,53,.76)";ctx.beginPath();rRect(ctx,W*.89,H*.18,W*.075,H*.34,8);ctx.fill()
-      ;[0,1,2,3].forEach(index=>{
-        const cy=H*(.225+index*.07)
-        ctx.beginPath();ctx.arc(W*.927,cy,7,0,Math.PI*2)
-        ctx.fillStyle=index===1?"#ef8a73":"#d7dddc";ctx.fill()
-        ctx.strokeStyle="rgba(0,0,0,.35)";ctx.lineWidth=1;ctx.stroke()
-      })
-
-      // Diamond-plate inspired floor sheen.
-      const floor=ctx.createLinearGradient(0,H*.78,0,H)
-      floor.addColorStop(0,"rgba(60,68,70,.08)");floor.addColorStop(1,"rgba(36,43,45,.48)")
-      ctx.fillStyle=floor;ctx.fillRect(0,H*.78,W,H*.22)
-      ctx.strokeStyle="rgba(235,240,239,.13)";ctx.lineWidth=1
-      for(let x=-W;x<W*2;x+=26){ctx.beginPath();ctx.moveTo(x,H);ctx.lineTo(x+W*.18,H*.78);ctx.stroke()}
-      break
-    }
-    case "washer": {
-      // Grout lines and cool enamel recreate a compact retro laundromat.
-      ctx.strokeStyle="rgba(78,112,112,.15)";ctx.lineWidth=1
-      for(let x=0;x<W;x+=38){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H*.72);ctx.stroke()}
-      for(let y=0;y<H*.72;y+=38){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
-
-      ctx.fillStyle="rgba(34,78,76,.88)";ctx.beginPath();rRect(ctx,W*.32,H*.035,W*.36,H*.09,8);ctx.fill()
-      ctx.fillStyle="#f5f1e7";ctx.font="700 13px Nunito, sans-serif";ctx.textAlign="center"
-      ctx.fillText("SELF SERVICE · WASH & POSE",W*.5,H*.09)
-
-      const drawWasher=(x:number,y:number,w:number,h:number)=>{
-        ctx.fillStyle="rgba(245,243,235,.96)";ctx.beginPath();rRect(ctx,x,y,w,h,12);ctx.fill()
-        ctx.strokeStyle="rgba(64,84,84,.22)";ctx.lineWidth=2;ctx.stroke()
-        ctx.fillStyle="#d5d9d5";ctx.fillRect(x,y+h*.08,w,h*.19)
-        ctx.fillStyle="#343b3b";ctx.beginPath();rRect(ctx,x+w*.12,y+h*.125,w*.28,h*.065,3);ctx.fill()
-        ;[.62,.77,.9].forEach(cx=>{ctx.beginPath();ctx.arc(x+w*cx,y+h*.17,4,0,Math.PI*2);ctx.fillStyle="#62706e";ctx.fill()})
-        const doorX=x+w*.5,doorY=y+h*.61,doorR=Math.min(w,h)*.31
-        ctx.beginPath();ctx.arc(doorX,doorY,doorR,0,Math.PI*2);ctx.fillStyle="#9aa4a3";ctx.fill()
-        ctx.beginPath();ctx.arc(doorX,doorY,doorR*.76,0,Math.PI*2)
-        const glass=ctx.createRadialGradient(doorX-doorR*.25,doorY-doorR*.3,2,doorX,doorY,doorR)
-        glass.addColorStop(0,"#8ab1b5");glass.addColorStop(.55,"#33494d");glass.addColorStop(1,"#172326")
-        ctx.fillStyle=glass;ctx.fill()
-        ctx.strokeStyle="rgba(255,255,255,.42)";ctx.lineWidth=3;ctx.beginPath();ctx.arc(doorX,doorY,doorR*.62,Math.PI*1.05,Math.PI*1.65);ctx.stroke()
-      }
-      drawWasher(-W*.055,H*.27,W*.31,H*.62)
-      drawWasher(W*.745,H*.27,W*.31,H*.62)
-
-      const floor=ctx.createLinearGradient(0,H*.72,0,H)
-      floor.addColorStop(0,"rgba(79,101,99,.08)");floor.addColorStop(1,"rgba(79,101,99,.28)")
-      ctx.fillStyle=floor;ctx.fillRect(0,H*.72,W,H*.28)
-      ctx.strokeStyle="rgba(45,73,71,.16)"
-      for(let x=-W;x<W*2;x+=46){ctx.beginPath();ctx.moveTo(x,H);ctx.lineTo(x+W*.12,H*.72);ctx.stroke()}
-      break
-    }
-    case "cctv": {
-      // Neutral monitor tint and subtle interlacing, based on real security feeds.
-      ctx.fillStyle="rgba(26,39,36,.22)";ctx.fillRect(0,0,W,H)
-      ctx.fillStyle="rgba(0,0,0,.075)"
-      for(let y=0;y<H;y+=4)ctx.fillRect(0,y,W,1)
-
-      ctx.strokeStyle="rgba(210,224,216,.55)";ctx.lineWidth=2
-      const corner=24,pad=16
-      ;[[pad,pad,1,1],[W-pad,pad,-1,1],[pad,H-pad,1,-1],[W-pad,H-pad,-1,-1]].forEach(([x,y,dx,dy])=>{
-        ctx.beginPath();ctx.moveTo(x+dx*corner,y);ctx.lineTo(x,y);ctx.lineTo(x,y+dy*corner);ctx.stroke()
-      })
-
-      ctx.fillStyle="rgba(3,6,6,.72)";ctx.fillRect(0,H-38,W,38)
-      ctx.font="700 12px monospace";ctx.textAlign="left";ctx.fillStyle="#d5dfd8"
-      const stamp=new Date().toLocaleString("en-US",{hour12:false})
-      ctx.fillText(`CAM 03  ·  ${stamp}`,14,H-14)
-      ctx.textAlign="right";ctx.fillText("ELEVATOR LOBBY",W-14,H-14)
-
-      ctx.textAlign="left";ctx.fillStyle="#d5dfd8";ctx.font="700 11px monospace";ctx.fillText("CH 03  1080P",16,29)
-      ctx.fillStyle="#f04d42";ctx.beginPath();ctx.arc(W-24,24,6,0,Math.PI*2);ctx.fill()
-      ctx.textAlign="right";ctx.fillStyle="#f0dbd8";ctx.fillText("REC",W-38,28)
-      drawVignette(ctx,W,H,.46)
-      break
-    }
+function drawWasherForeground(ctx:CanvasRenderingContext2D,W:number,H:number) {
+  const image=getThemeImage("washer"),opening=washerOpening(W,H)
+  if(image?.complete&&image.naturalWidth){
+    // Repaint the appliance everywhere except the opening. This places the
+    // real rubber and metal rim in front of the people, not behind them.
+    ctx.save()
+    ctx.beginPath();ctx.rect(0,0,W,H);ctx.ellipse(opening.x,opening.y,opening.r,opening.r,0,0,Math.PI*2)
+    ctx.clip("evenodd")
+    drawCoverImage(ctx,image,W,H)
+    ctx.restore()
   }
+  const gasket=ctx.createRadialGradient(opening.x-opening.r*.25,opening.y-opening.r*.3,opening.r*.45,opening.x,opening.y,opening.r*1.04)
+  gasket.addColorStop(.78,"rgba(255,255,255,0)")
+  gasket.addColorStop(.9,"rgba(18,24,27,.38)")
+  gasket.addColorStop(1,"rgba(255,255,255,.58)")
+  ctx.fillStyle=gasket;ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*1.055,0,Math.PI*2);ctx.fill()
+  ctx.strokeStyle="rgba(16,22,25,.52)";ctx.lineWidth=Math.max(4,W*.008)
+  ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*1.01,0,Math.PI*2);ctx.stroke()
+  ctx.strokeStyle="rgba(255,255,255,.4)";ctx.lineWidth=2
+  ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*.98,Math.PI*1.08,Math.PI*1.72);ctx.stroke()
+  drawVignette(ctx,W,H,.18)
+}
+
+function drawElevatorCctv(ctx:CanvasRenderingContext2D,W:number,H:number) {
+  ctx.fillStyle="rgba(12,31,29,.12)";ctx.fillRect(0,0,W,H)
+  ctx.fillStyle="rgba(0,0,0,.075)"
+  for(let y=0;y<H;y+=4)ctx.fillRect(0,y,W,1)
+
+  ctx.strokeStyle="rgba(220,234,227,.62)";ctx.lineWidth=2
+  const corner=24,pad=16
+  ;[[pad,pad,1,1],[W-pad,pad,-1,1],[pad,H-pad,1,-1],[W-pad,H-pad,-1,-1]].forEach(([x,y,dx,dy])=>{
+    ctx.beginPath();ctx.moveTo(x+dx*corner,y);ctx.lineTo(x,y);ctx.lineTo(x,y+dy*corner);ctx.stroke()
+  })
+
+  ctx.fillStyle="rgba(3,7,8,.72)";ctx.fillRect(0,H-38,W,38)
+  ctx.font="700 12px monospace";ctx.textAlign="left";ctx.fillStyle="#dce8e1"
+  const stamp=new Date().toLocaleString("en-US",{hour12:false})
+  ctx.fillText(`CAM 03  ·  ${stamp}`,14,H-14)
+  ctx.textAlign="right";ctx.fillText("LIFT CABIN",W-14,H-14)
+  ctx.textAlign="left";ctx.font="700 11px monospace";ctx.fillText("LEVEL 12  ·  CH 03",16,29)
+  ctx.fillStyle="#f04d42";ctx.beginPath();ctx.arc(W-24,24,6,0,Math.PI*2);ctx.fill()
+  ctx.textAlign="right";ctx.fillStyle="#f6e0dc";ctx.fillText("REC",W-38,28)
+  drawVignette(ctx,W,H,.42)
 }
 
 function drawVignette(ctx:CanvasRenderingContext2D, W:number, H:number, strength=0.3) {
@@ -481,13 +458,20 @@ function drawBoothFrame(
 ) {
   ctx.clearRect(0,0,W,H)
   drawThemeBg(ctx,themeId,W,H)
-  if(themeId!=="cctv") drawThemeDetails(ctx,themeId,W,H)
+  drawThemeDetails(ctx,themeId,W,H)
 
-  const pW=W*.52, pH=H*.92, pY=H*.025
+  const pW=themeId==="washer"?W*.42:themeId==="elevator"?W*.43:W*.52
+  const pH=themeId==="washer"?H*.72:themeId==="elevator"?H*.76:H*.92
+  const pY=themeId==="washer"?H*.18:themeId==="elevator"?H*.18:H*.025
   const maxGap=W*.01, minGap=-pW*.42
   const gap=maxGap-(proximity/100)*(maxGap-minGap)
   const youX=W/2-pW-gap/2
   const partX=W/2+gap/2
+
+  if(themeId==="washer"){
+    const opening=washerOpening(W,H)
+    ctx.save();ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*.99,0,Math.PI*2);ctx.clip()
+  }
 
   if(video.readyState>=2&&localMask) {
     drawPersonCutout(ctx,video,localMask,localBounds,localScratch,youX,pY,pW,pH,true)
@@ -506,7 +490,10 @@ function drawBoothFrame(
       ctx.fillText(partnerVideo?"Removing their room background":"Their live camera will appear here",partX+pW/2,pY+pH/2+17); ctx.restore()
   }
 
-  if(themeId==="cctv") drawThemeDetails(ctx,themeId,W,H)
+  if(themeId==="washer") ctx.restore()
+
+  if(themeId==="washer") drawWasherForeground(ctx,W,H)
+  else if(themeId==="elevator") drawElevatorCctv(ctx,W,H)
   else drawVignette(ctx,W,H,.2)
 }
 

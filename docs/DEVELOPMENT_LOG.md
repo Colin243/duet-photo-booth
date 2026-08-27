@@ -47,14 +47,15 @@ The earlier Airplane, Kitchen, and Arcade scenes were removed. They were visuall
 distinct but did not yet resemble convincing physical sets, and the large
 Airplane overlay could cross the participants' faces.
 
-The remaining scene lineup is:
+The scene lineup was reduced again after visual review. Elevator and CCTV now
+form one scene, while Laundromat has become a first-person view from inside the
+machine drum:
 
 | Scene | Current direction | Key implementation details |
 | --- | --- | --- |
 | Classic | Soft daylight studio | White-to-pastel-blue wall, central glow, restrained floor depth |
-| Laundromat | Retro self-service set | Tiled wall, two front-loading machines, enamel panels, washer glass, floor perspective, signage |
-| Elevator | Realistic lift cabin | Brushed-steel panels, center door seam, ceiling light, floor indicator, handrail, buttons, diamond-plate-inspired floor |
-| CCTV | Security monitor feed | Neutral surveillance grade, scanlines, safe-area corners, channel label, recording indicator, timestamp, camera location |
+| Washer Drum | Camera inside the open machine | Public-domain drum photograph, circular inner-door clipping, photographic gasket in front of both people, restrained glass highlight |
+| Elevator CCTV | Security camera inside the lift | CC0 elevator-cabin photograph, cool monitor grade, scanlines, safe-area corners, recording indicator, timestamp, and lift-cabin label |
 
 The realism pass used these references:
 
@@ -62,9 +63,12 @@ The realism pass used these references:
 - The Film elevator booth review, describing burnished walls, mirror, handrail, faux buttons, aluminum flooring, and an elevated CCTV-style angle: https://thesmartlocal.my/the-film-ss15/
 - PLAN.B Studio's stainless elevator photo booth and integrated self-service controls: https://planbstudio.bizplace.kr/
 
-Theme props are drawn behind the person cutouts. Only display treatments that
-belong in front of the image, such as CCTV scanlines and timestamps, are rendered
-after the people. This prevents decorative frames from covering faces and hands.
+The photographic washer interior is drawn first. Both people are then clipped
+inside its circular opening, and the real rubber-and-metal door surround is
+repainted in front so they appear to be leaning into the drum. In Elevator CCTV,
+the cabin is behind the people and only the security-feed treatment is drawn in
+front. Source and license records for both photos live beside the assets in
+`public/theme-assets/LICENSES.md`.
 
 ## Verification process
 
@@ -81,10 +85,13 @@ Every release follows this loop:
 9. Commit and push the tested files to `main`.
 10. Wait for Vercel's GitHub deployment status and verify the public URL returns successfully.
 
-For the realistic-theme release, Laundromat, Elevator, and CCTV each passed the
-paired-camera run with both trackers ready and the shutter enabled. The run
-reported zero packet-timestamp mismatches, skipped mask frames, or peer errors.
-The Vite production build also completed successfully.
+For the initial realistic-theme release, Laundromat, Elevator, and CCTV each
+passed the paired-camera run. The later photo-backed Washer Drum and combined
+Elevator CCTV scenes retain the same synchronized scene state and person-mask
+pipeline. Their paired-camera verification confirmed that scene navigation
+reached both browsers, both trackers reported ready, the shutter enabled, and
+the photographic layers loaded without application or peer-connection errors.
+MediaPipe emitted only its normal WebGL/delegate startup notices.
 
 ## Privacy and artifacts
 
