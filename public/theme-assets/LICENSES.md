@@ -13,7 +13,28 @@ modified, distributed, and used commercially without asking permission.
 - License record: https://creativecommons.org/publicdomain/zero/1.0/
 - Local modification: resized and JPEG-compressed for responsive web delivery
 
-## Elevator CCTV
+## Laundromat Outside View
+
+- File: `laundromat-outside.jpg`
+- Title: *Laundromat Interior*
+- Photographer: Circe Denyer
+- Source: https://www.publicdomainpictures.net/en/view-image.php?image=249351&picture=laundromat-interior
+- License: CC0 / Public Domain
+- License record: https://creativecommons.org/publicdomain/zero/1.0/
+- Local modification: resized and JPEG-compressed for responsive web delivery
+
+This photograph is visible through the open drum. The public-domain washer-drum
+image supplies only the close foreground metal texture and gasket.
+
+## Elevator CCTV — current generated background
+
+- File: `elevator-cctv-corner.jpg`
+- Source: generated specifically for Duet with OpenAI ImageGen
+- Direction: empty stainless-steel elevator viewed steeply downward from a
+  security camera in the top-right ceiling corner
+- Local modification: resized and JPEG-compressed for responsive web delivery
+
+## Elevator CCTV — earlier photo reference
 
 - File: `elevator-cabin.jpg`
 - Title: *Looking inside to elevator (Unsplash)*

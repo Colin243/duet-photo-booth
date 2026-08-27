@@ -68,8 +68,8 @@ machine drum:
 | Scene | Current direction | Key implementation details |
 | --- | --- | --- |
 | Classic | Soft daylight studio | White-to-pastel-blue wall, central glow, restrained floor depth |
-| Washer Drum | Camera inside the open machine | Public-domain drum photograph, circular inner-door clipping, photographic gasket in front of both people, restrained glass highlight |
-| Elevator CCTV | Security camera inside the lift | CC0 elevator-cabin photograph, cool monitor grade, scanlines, safe-area corners, recording indicator, timestamp, and lift-cabin label |
+| Washer POV | Camera inside the open machine looking outward | CC0 laundromat beyond the opening, people standing outside, close foreground barrel texture, circular gasket, perforations, and vignette |
+| Elevator CCTV | Security camera in the top-right ceiling corner | Original generated high-angle cabin background, downward composition, cool monitor grade, scanlines, recording indicator, timestamp, and lift-cabin label |
 
 The realism pass used these references:
 
@@ -77,11 +77,13 @@ The realism pass used these references:
 - The Film elevator booth review, describing burnished walls, mirror, handrail, faux buttons, aluminum flooring, and an elevated CCTV-style angle: https://thesmartlocal.my/the-film-ss15/
 - PLAN.B Studio's stainless elevator photo booth and integrated self-service controls: https://planbstudio.bizplace.kr/
 
-The photographic washer interior is drawn first. Both people are then clipped
-inside its circular opening, and the real rubber-and-metal door surround is
-repainted in front so they appear to be leaning into the drum. In Elevator CCTV,
-the cabin is behind the people and only the security-feed treatment is drawn in
-front. Source and license records for both photos live beside the assets in
+The washer camera now sits inside the machine and faces outward. A real CC0
+laundromat is drawn first, both people stand in that outside space and are
+visible only through the circular opening, and the barrel texture, perforations,
+and gasket are drawn last at close range. Elevator CCTV uses a purpose-generated
+empty cabin from a steep top-right security-camera angle; people are scaled
+smaller and lower so they occupy the floor rather than appearing at eye level.
+Source and generation records live beside the assets in
 `public/theme-assets/LICENSES.md`.
 
 ## Verification process

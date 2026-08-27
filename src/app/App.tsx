@@ -139,8 +139,8 @@ const THEMES: {
   previewBg:string; dark:boolean; accent:string
 }[] = [
   { id:"classic",  name:"Classic Plain",emoji:"✦",   tagline:"The original clean booth",   previewBg:"linear-gradient(160deg,#ffffff,#dceeff)", dark:false, accent:"#C85B82" },
-  { id:"washer",   name:"Washer Drum",   emoji:"◎",   tagline:"Peek in through the door",  previewBg:"url('/theme-assets/washer-drum.jpg') center/cover", dark:false, accent:"#52616A" },
-  { id:"elevator", name:"Elevator CCTV", emoji:"REC", tagline:"Caught inside the lift",    previewBg:"linear-gradient(rgba(8,18,20,.25),rgba(8,18,20,.25)),url('/theme-assets/elevator-cabin.jpg') center/cover", dark:true, accent:"#D8E3DE" },
+  { id:"washer",   name:"Washer POV",    emoji:"◎",   tagline:"Camera inside, you outside", previewBg:"radial-gradient(circle,transparent 38%,rgba(20,25,27,.76) 66%),url('/theme-assets/laundromat-outside.jpg') center/cover", dark:true, accent:"#D6DEE0" },
+  { id:"elevator", name:"Elevator CCTV", emoji:"REC", tagline:"High-corner security view", previewBg:"linear-gradient(rgba(8,18,20,.25),rgba(8,18,20,.25)),url('/theme-assets/elevator-cctv-corner.jpg') center/cover", dark:true, accent:"#D8E3DE" },
 ]
 
 const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
@@ -151,9 +151,10 @@ const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
 ]
 
 const THEME_IMAGE_PATHS:Partial<Record<ThemeId,string>>={
-  washer:"/theme-assets/washer-drum.jpg",
-  elevator:"/theme-assets/elevator-cabin.jpg",
+  washer:"/theme-assets/laundromat-outside.jpg",
+  elevator:"/theme-assets/elevator-cctv-corner.jpg",
 }
+const WASHER_RIM_IMAGE_PATH="/theme-assets/washer-drum.jpg"
 const themeImageCache=new Map<string,HTMLImageElement>()
 
 const FILTERS: { id:FilterId; name:string; css:string }[] = [
@@ -223,8 +224,7 @@ function mkLinear(ctx:CanvasRenderingContext2D, x0:number,y0:number,x1:number,y1
   return g
 }
 
-function getThemeImage(id:ThemeId) {
-  const src=THEME_IMAGE_PATHS[id]
+function getCachedImage(src:string|undefined) {
   if(!src||typeof Image==="undefined") return null
   let image=themeImageCache.get(src)
   if(!image){
@@ -236,6 +236,10 @@ function getThemeImage(id:ThemeId) {
   return image
 }
 
+function getThemeImage(id:ThemeId) {
+  return getCachedImage(THEME_IMAGE_PATHS[id])
+}
+
 function drawCoverImage(ctx:CanvasRenderingContext2D,image:HTMLImageElement,W:number,H:number) {
   const scale=Math.max(W/image.naturalWidth,H/image.naturalHeight)
   const width=image.naturalWidth*scale,height=image.naturalHeight*scale
@@ -243,13 +247,18 @@ function drawCoverImage(ctx:CanvasRenderingContext2D,image:HTMLImageElement,W:nu
 }
 
 function washerOpening(W:number,H:number) {
-  return {x:W*.495,y:H*.495,r:Math.min(W*.242,H*.37)}
+  return {x:W*.5,y:H*.5,r:Math.min(W*.34,H*.43)}
 }
 
 function drawThemeBg(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:number) {
   const image=getThemeImage(id)
   if(image?.complete&&image.naturalWidth){
     drawCoverImage(ctx,image,W,H)
+    if(id==="washer"){
+      const depth=ctx.createRadialGradient(W*.5,H*.48,0,W*.5,H*.5,H*.7)
+      depth.addColorStop(0,"rgba(235,246,247,.06)");depth.addColorStop(1,"rgba(11,18,20,.24)")
+      ctx.fillStyle=depth;ctx.fillRect(0,0,W,H)
+    }
     if(id==="elevator"){
       ctx.fillStyle="rgba(12,27,31,.18)";ctx.fillRect(0,0,W,H)
     }
@@ -276,25 +285,45 @@ function drawThemeDetails(ctx:CanvasRenderingContext2D,id:ThemeId,W:number,H:num
 }
 
 function drawWasherForeground(ctx:CanvasRenderingContext2D,W:number,H:number) {
-  const image=getThemeImage("washer"),opening=washerOpening(W,H)
+  const image=getCachedImage(WASHER_RIM_IMAGE_PATH),opening=washerOpening(W,H)
+  // From inside the drum, everything outside the open door is the real
+  // laundromat. The dark perforated barrel and gasket remain close to camera.
+  const tunnel=ctx.createRadialGradient(opening.x,opening.y,opening.r*.84,opening.x,opening.y,Math.max(W,H)*.68)
+  tunnel.addColorStop(0,"rgba(22,29,32,0)")
+  tunnel.addColorStop(.22,"rgba(38,47,50,.84)")
+  tunnel.addColorStop(.58,"rgba(15,20,22,.95)")
+  tunnel.addColorStop(1,"rgba(4,7,8,1)")
+  ctx.fillStyle=tunnel;ctx.fillRect(0,0,W,H)
   if(image?.complete&&image.naturalWidth){
-    // Repaint the appliance everywhere except the opening. This places the
-    // real rubber and metal rim in front of the people, not behind them.
     ctx.save()
     ctx.beginPath();ctx.rect(0,0,W,H);ctx.ellipse(opening.x,opening.y,opening.r,opening.r,0,0,Math.PI*2)
     ctx.clip("evenodd")
-    drawCoverImage(ctx,image,W,H)
+    ctx.globalAlpha=.58
+    const scale=Math.max(W/image.naturalWidth,H/image.naturalHeight)*1.52
+    const width=image.naturalWidth*scale,height=image.naturalHeight*scale
+    ctx.drawImage(image,(W-width)/2,(H-height)/2,width,height)
+    ctx.globalCompositeOperation="multiply";ctx.fillStyle="rgba(35,47,51,.78)";ctx.fillRect(0,0,W,H)
     ctx.restore()
   }
   const gasket=ctx.createRadialGradient(opening.x-opening.r*.25,opening.y-opening.r*.3,opening.r*.45,opening.x,opening.y,opening.r*1.04)
   gasket.addColorStop(.78,"rgba(255,255,255,0)")
-  gasket.addColorStop(.9,"rgba(18,24,27,.38)")
-  gasket.addColorStop(1,"rgba(255,255,255,.58)")
+  gasket.addColorStop(.86,"rgba(8,12,14,.62)")
+  gasket.addColorStop(.94,"rgba(162,178,180,.72)")
+  gasket.addColorStop(1,"rgba(26,34,37,.95)")
   ctx.fillStyle=gasket;ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*1.055,0,Math.PI*2);ctx.fill()
   ctx.strokeStyle="rgba(16,22,25,.52)";ctx.lineWidth=Math.max(4,W*.008)
   ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*1.01,0,Math.PI*2);ctx.stroke()
   ctx.strokeStyle="rgba(255,255,255,.4)";ctx.lineWidth=2
   ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*.98,Math.PI*1.08,Math.PI*1.72);ctx.stroke()
+  ctx.fillStyle="rgba(210,224,224,.18)"
+  for(let ring=1.18;ring<1.68;ring+=.16){
+    const count=34
+    for(let i=0;i<count;i++){
+      const angle=i/count*Math.PI*2
+      const radius=opening.r*ring
+      ctx.beginPath();ctx.arc(opening.x+Math.cos(angle)*radius,opening.y+Math.sin(angle)*radius,1.25,0,Math.PI*2);ctx.fill()
+    }
+  }
   drawVignette(ctx,W,H,.18)
 }
 
@@ -544,9 +573,9 @@ function drawBoothFrame(
   drawThemeBg(ctx,themeId,W,H)
   drawThemeDetails(ctx,themeId,W,H)
 
-  const pW=themeId==="washer"?W*.42:themeId==="elevator"?W*.43:W*.52
-  const pH=themeId==="washer"?H*.72:themeId==="elevator"?H*.76:H*.92
-  const pY=themeId==="washer"?H*.18:themeId==="elevator"?H*.18:H*.025
+  const pW=themeId==="washer"?W*.48:themeId==="elevator"?W*.36:W*.52
+  const pH=themeId==="washer"?H*.8:themeId==="elevator"?H*.64:H*.92
+  const pY=themeId==="washer"?H*.1:themeId==="elevator"?H*.27:H*.025
   const maxGap=W*.01, minGap=-pW*.42
   const gap=maxGap-(proximity/100)*(maxGap-minGap)
   const youX=W/2-pW-gap/2
