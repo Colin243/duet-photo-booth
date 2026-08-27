@@ -112,10 +112,12 @@ type Screen = "landing"|"room"|"layout"|"theme"|"ready"|"booth"|"select"|"custom
 type Layout  = "classic"|"wide"
 type ThemeId = "classic"|"washer"|"elevator"
 type PropId = "none"|"glasses"|"partyHat"|"catEars"
+type SkinSmoothing = 0|1|2
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
 
 type SyncMessage =
   | { type:"STATE"; screen:Screen; layout:Layout; themeId:ThemeId; propId:PropId }
+  | { type:"BEAUTY"; strength:SkinSmoothing }
   | { type:"CAPTURE"; at:number }
 
 interface StickerItem { id:string; emoji:string; x:number; y:number; rot:number }
@@ -545,6 +547,44 @@ function drawTrackedProp(
   ctx.restore()
 }
 
+function drawSkinSoftening(
+  ctx:CanvasRenderingContext2D,
+  scratch:HTMLCanvasElement,
+  pose:NormalizedLandmark[],
+  tracked:PersonBounds,
+  drawX:number,drawY:number,drawW:number,drawH:number,
+  strength:SkinSmoothing
+) {
+  if(strength===0) return
+  const leftEye=pose[2],rightEye=pose[5]
+  if(!leftEye||!rightEye||(leftEye.visibility??1)<.35||(rightEye.visibility??1)<.35) return
+  const point=(landmark:NormalizedLandmark)=>({
+    x:drawX+((landmark.x-tracked.x)/tracked.width)*drawW,
+    y:drawY+((landmark.y-tracked.y)/tracked.height)*drawH,
+  })
+  const left=point(leftEye),right=point(rightEye)
+  const eyeDistance=Math.hypot(right.x-left.x,right.y-left.y)
+  if(!Number.isFinite(eyeDistance)||eyeDistance<5) return
+  const centerX=(left.x+right.x)/2
+  const centerY=(left.y+right.y)/2+eyeDistance*.5
+  const radiusX=eyeDistance*1.14
+  const radiusY=eyeDistance*1.42
+
+  // Blend a low-opacity blurred copy only over the face oval. The original
+  // frame remains beneath it, keeping eyes, expression, hair, and props crisp.
+  ctx.save()
+  ctx.beginPath();ctx.ellipse(centerX,centerY,radiusX,radiusY,0,0,Math.PI*2);ctx.clip()
+  ctx.filter=`blur(${strength===1?2.2:4}px)`
+  ctx.globalAlpha=strength===1?.24:.38
+  ctx.drawImage(scratch,drawX,drawY,drawW,drawH,drawX,drawY,drawW,drawH)
+  ctx.filter="none"
+  const glow=ctx.createRadialGradient(centerX-eyeDistance*.2,centerY-eyeDistance*.35,0,centerX,centerY,radiusY)
+  glow.addColorStop(0,`rgba(255,239,235,${strength===1?.055:.085})`)
+  glow.addColorStop(1,"rgba(255,239,235,0)")
+  ctx.globalAlpha=1;ctx.fillStyle=glow;ctx.fillRect(centerX-radiusX,centerY-radiusY,radiusX*2,radiusY*2)
+  ctx.restore()
+}
+
 function drawPersonCutout(
   ctx:CanvasRenderingContext2D,
   video:HTMLVideoElement,
@@ -552,6 +592,7 @@ function drawPersonCutout(
   personBounds:PersonBounds|null,
   pose:NormalizedLandmark[],
   propId:PropId,
+  skinSmoothing:SkinSmoothing,
   scratch:HTMLCanvasElement,
   x:number, y:number, width:number, height:number,
   mirrored=true
@@ -586,6 +627,7 @@ function drawPersonCutout(
   if(mirrored){ ctx.translate(drawX*2+drawW,0); ctx.scale(-1,1) }
   ctx.drawImage(scratch,drawX,drawY,drawW,drawH,drawX,drawY,drawW,drawH)
   ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0
+  drawSkinSoftening(ctx,scratch,pose,tracked,drawX,drawY,drawW,drawH,skinSmoothing)
   drawTrackedProp(ctx,propId,pose,tracked,drawX,drawY,drawW,drawH)
   ctx.restore()
 }
@@ -597,6 +639,8 @@ function drawBoothFrame(
   W:number, H:number,
   themeId:ThemeId,
   propId:PropId,
+  localSkinSmoothing:SkinSmoothing,
+  partnerSkinSmoothing:SkinSmoothing,
   proximity:number,
   localMask:HTMLCanvasElement|null,
   partnerMask:HTMLCanvasElement|null,
@@ -625,12 +669,12 @@ function drawBoothFrame(
   }
 
   if(video.readyState>=2&&localMask) {
-    drawPersonCutout(ctx,video,localMask,localBounds,localPose,propId,localScratch,youX,pY,pW,pH,true)
+    drawPersonCutout(ctx,video,localMask,localBounds,localPose,propId,localSkinSmoothing,localScratch,youX,pY,pW,pH,true)
   }
 
   const partnerReady=Boolean(partnerVideo&&partnerVideo.readyState>=2&&partnerMask)
   if(partnerReady&&partnerVideo&&partnerMask){
-    drawPersonCutout(ctx,partnerVideo,partnerMask,partnerBounds,partnerPose,propId,partnerScratch,partX,pY,pW,pH,true)
+    drawPersonCutout(ctx,partnerVideo,partnerMask,partnerBounds,partnerPose,propId,partnerSkinSmoothing,partnerScratch,partX,pY,pW,pH,true)
   } else {
       ctx.save(); ctx.beginPath(); rRect(ctx,partX,pY,pW,pH,8)
       ctx.fillStyle="rgba(255,255,255,.24)"; ctx.fill()
@@ -928,8 +972,9 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
 // GET READY SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function GetReadyScreen({ stream, remoteStream, tipIndex, onContinue }:{
-  stream:MediaStream|null; remoteStream:MediaStream|null; tipIndex:number; onContinue:()=>void
+function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmoothingChange,onContinue }:{
+  stream:MediaStream|null; remoteStream:MediaStream|null; tipIndex:number;
+  skinSmoothing:SkinSmoothing;onSkinSmoothingChange:(strength:SkinSmoothing)=>void;onContinue:()=>void
 }) {
   const vidRef = useRef<HTMLVideoElement>(null)
   const remoteRef = useRef<HTMLVideoElement>(null)
@@ -959,7 +1004,7 @@ function GetReadyScreen({ stream, remoteStream, tipIndex, onContinue }:{
 
         {/* Camera preview */}
         <div style={{ position:"relative", borderRadius:22, overflow:"hidden", background:"#111", aspectRatio:"4/3", maxWidth:380, margin:"0 auto 24px", boxShadow:"0 10px 44px rgba(0,0,0,0.18)" }}>
-          <video ref={vidRef} autoPlay playsInline muted style={{ width:"100%", height:"100%", objectFit:"cover", transform:"scaleX(-1)", display:"block" }}/>
+          <video ref={vidRef} autoPlay playsInline muted style={{ width:"100%", height:"100%", objectFit:"cover", transform:"scaleX(-1)", display:"block",filter:skinSmoothing===0?"none":skinSmoothing===1?"brightness(1.02) saturate(.98) blur(.35px)":"brightness(1.035) saturate(.96) blur(.65px)" }}/>
           {remoteStream&&<video ref={remoteRef} autoPlay playsInline style={{ position:"absolute", right:12, bottom:12, width:"34%", aspectRatio:"4/3", objectFit:"cover", transform:"scaleX(-1)", borderRadius:14, border:"3px solid #fff", boxShadow:"0 8px 24px rgba(0,0,0,.25)" }}/>} 
           {!ready&&(
             <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14, color:"rgba(255,255,255,0.7)" }}>
@@ -978,8 +1023,23 @@ function GetReadyScreen({ stream, remoteStream, tipIndex, onContinue }:{
           {ready&&<div style={{ position:"absolute", inset:0, backgroundImage:"linear-gradient(rgba(255,255,255,0.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.06) 1px,transparent 1px)", backgroundSize:"25% 33.3%", pointerEvents:"none" }}/>}
         </div>
 
+        <div style={{ margin:"0 auto 18px",maxWidth:400,background:"rgba(255,255,255,.86)",borderRadius:16,padding:"15px 16px",border:"1px solid rgba(200,91,130,.14)",boxShadow:"0 3px 16px rgba(59,36,68,.05)",textAlign:"left" }}>
+          <div style={{ display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",marginBottom:10 }}>
+            <p style={{ margin:0,fontSize:11,fontWeight:900,letterSpacing:".12em",color:"#C85B82" }}>YOUR SKIN SOFTENING</p>
+            <span style={{ fontSize:9,color:"#A78B9E" }}>Your choice only</span>
+          </div>
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8 }}>
+            {([[0,"Natural"],[1,"Soft"],[2,"Extra soft"]] as [SkinSmoothing,string][]).map(([value,label])=>(
+              <button key={value} onClick={()=>onSkinSmoothingChange(value)} style={{ border:`1.5px solid ${skinSmoothing===value?"#C85B82":"#E6D9E1"}`,borderRadius:10,padding:"9px 6px",background:skinSmoothing===value?"#FFF4F8":"#fff",color:skinSmoothing===value?"#A7466A":"#755F70",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:11,cursor:"pointer",boxShadow:skinSmoothing===value?"0 3px 10px rgba(200,91,130,.12)":"none" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <p style={{ margin:"9px 2px 0",fontSize:10,lineHeight:1.45,color:"#A08698" }}>Optional and face-only in the booth. Your partner controls their own setting.</p>
+        </div>
+
         {/* Tip card */}
-        <div style={{ margin:"0 auto 28px", maxWidth:400, background:"#fff", borderRadius:16, padding:"18px 24px", border:"1px solid rgba(200,91,130,0.12)", boxShadow:"0 2px 14px rgba(0,0,0,0.04)", textAlign:"left" }}>
+        <div style={{ margin:"0 auto 24px", maxWidth:400, background:"#fff", borderRadius:16, padding:"16px 22px", border:"1px solid rgba(200,91,130,0.12)", boxShadow:"0 2px 14px rgba(0,0,0,0.04)", textAlign:"left" }}>
           <p style={{ fontSize:11, color:"#C85B82", fontWeight:700, marginBottom:6, letterSpacing:"0.1em" }}>💡  TIP {tipIndex+1} / {TIPS.length}</p>
           <p style={{ fontSize:14, color:"#2D1B2E", lineHeight:1.65 }}>{TIPS[tipIndex]}</p>
         </div>
@@ -999,8 +1059,9 @@ function GetReadyScreen({ stream, remoteStream, tipIndex, onContinue }:{
 // BOOTH SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BoothScreen({ stream, remoteStream, themeId,propId,layout,captureAt,onCaptureRequest,onPhotoCapture,onDone }:{
-  stream:MediaStream|null;remoteStream:MediaStream|null;themeId:ThemeId;propId:PropId;layout:Layout;captureAt:number|null;
+function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partnerSkinSmoothing,layout,captureAt,onCaptureRequest,onPhotoCapture,onDone }:{
+  stream:MediaStream|null;remoteStream:MediaStream|null;themeId:ThemeId;propId:PropId;
+  skinSmoothing:SkinSmoothing;partnerSkinSmoothing:SkinSmoothing;layout:Layout;captureAt:number|null;
   onCaptureRequest:()=>void; onPhotoCapture:(dataUrl:string)=>void; onDone:()=>void
 }) {
   const vidRef      = useRef<HTMLVideoElement>(null)
@@ -1161,7 +1222,7 @@ function BoothScreen({ stream, remoteStream, themeId,propId,layout,captureAt,onC
         finally{ segmentBusyRef.current=false }
       }
       drawBoothFrame(
-        ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,propId,proximity,
+        ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,propId,skinSmoothing,partnerSkinSmoothing,proximity,
         localMaskReadyRef.current?localMaskRef.current:null,
         partnerMaskReadyRef.current?partnerMaskRef.current:null,
         localBoundsRef.current,partnerBoundsRef.current,
@@ -1172,14 +1233,14 @@ function BoothScreen({ stream, remoteStream, themeId,propId,layout,captureAt,onC
     }
     loop()
     return ()=>{ if(rafRef.current) cancelAnimationFrame(rafRef.current) }
-  },[themeId,propId,proximity,remoteStream,updatePersonMask])
+  },[themeId,propId,skinSmoothing,partnerSkinSmoothing,proximity,remoteStream,updatePersonMask])
 
   const doCapture = useCallback(()=>{
     const video=vidRef.current, canvas=captureRef.current
     if(!video||!canvas) return
     const ctx=canvas.getContext("2d")!
     drawBoothFrame(
-      ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,propId,proximity,
+      ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,propId,skinSmoothing,partnerSkinSmoothing,proximity,
       localMaskReadyRef.current?localMaskRef.current:null,
       partnerMaskReadyRef.current?partnerMaskRef.current:null,
       localBoundsRef.current,partnerBoundsRef.current,
@@ -1190,7 +1251,7 @@ function BoothScreen({ stream, remoteStream, themeId,propId,layout,captureAt,onC
     setPhotos(prev=>[...prev,url])
     onPhotoCapture(url)
     setPoked(true); setTimeout(()=>setPoked(false),900)
-  },[themeId,propId,proximity,onPhotoCapture])
+  },[themeId,propId,skinSmoothing,partnerSkinSmoothing,proximity,onPhotoCapture])
 
   useEffect(()=>{
     if(!captureAt||photos.length>=MAX) return
@@ -1613,6 +1674,8 @@ export default function App() {
   const [layout,  setLayout]  = useState<Layout>("classic")
   const [themeId, setThemeId] = useState<ThemeId>("classic")
   const [propId,  setPropId]  = useState<PropId>("none")
+  const [skinSmoothing,setSkinSmoothing]=useState<SkinSmoothing>(0)
+  const [partnerSkinSmoothing,setPartnerSkinSmoothing]=useState<SkinSmoothing>(0)
   const [roomCode,setRoomCode]= useState(initialRoom||genCode)
   const [isHost,setIsHost]    = useState(!initialRoom)
   const [partnerJoined, setPartnerJoined] = useState(false)
@@ -1631,8 +1694,10 @@ export default function App() {
   const dataRef=useRef<DataConnection|null>(null)
   const mediaRef=useRef<MediaConnection|null>(null)
   const syncRef=useRef({screen,layout,themeId,propId})
+  const beautyRef=useRef<SkinSmoothing>(skinSmoothing)
 
   useEffect(()=>{ syncRef.current={screen,layout,themeId,propId} },[screen,layout,themeId,propId])
+  useEffect(()=>{ beautyRef.current=skinSmoothing },[skinSmoothing])
 
   const sendMessage=(message:SyncMessage)=>{
     if(dataRef.current?.open) dataRef.current.send(message)
@@ -1658,6 +1723,12 @@ export default function App() {
     sendMessage({type:"STATE",screen,layout,themeId,propId:next})
   }
 
+  const chooseSkinSmoothing=(next:SkinSmoothing)=>{
+    setSkinSmoothing(next)
+    beautyRef.current=next
+    sendMessage({type:"BEAUTY",strength:next})
+  }
+
   // PeerJS provides signaling; media and state updates travel peer-to-peer.
   useEffect(()=>{
     if(screen==="landing") return
@@ -1671,15 +1742,17 @@ export default function App() {
       connection.on("open",()=>{
         setPartnerJoined(true)
         if(isHost) connection.send({type:"STATE",...syncRef.current} satisfies SyncMessage)
+        connection.send({type:"BEAUTY",strength:beautyRef.current} satisfies SyncMessage)
       })
       connection.on("data",raw=>{
         const message=raw as SyncMessage
         if(message.type==="STATE"){
           setScreen(message.screen);setLayout(message.layout);setThemeId(message.themeId);setPropId(message.propId||"none")
         }
+        if(message.type==="BEAUTY") setPartnerSkinSmoothing(message.strength===2?2:message.strength===1?1:0)
         if(message.type==="CAPTURE") setCaptureAt(message.at)
       })
-      connection.on("close",()=>{ setPartnerJoined(false); setRemoteStream(null) })
+      connection.on("close",()=>{ setPartnerJoined(false); setRemoteStream(null);setPartnerSkinSmoothing(0) })
     }
 
     peer.on("open",()=>{ if(!isHost) attachData(peer.connect(hostId,{reliable:true})) })
@@ -1820,7 +1893,7 @@ export default function App() {
     dataRef.current?.close(); mediaRef.current?.close(); peerRef.current?.destroy()
     stream?.getTracks().forEach(track=>track.stop())
     setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle")
-    setRemoteStream(null); setCaptureAt(null); setStream(null)
+    setRemoteStream(null); setCaptureAt(null); setStream(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0)
     window.history.replaceState({},"",window.location.pathname)
     setScreen("landing")
   }
@@ -1845,10 +1918,19 @@ export default function App() {
         {screen==="room"     && <RoomScreen code={roomCode} partnerJoined={partnerJoined} copied={copied} onCopy={handleCopy} onContinue={()=>navigate("layout")}/>} 
         {screen==="layout"   && <LayoutScreen selected={layout} onSelect={chooseLayout} onContinue={()=>navigate("theme")}/>} 
         {screen==="theme"    && <ThemeScreen selected={themeId} selectedProp={propId} onSelect={chooseTheme} onPropSelect={chooseProp} onContinue={()=>navigate("ready")}/>}
-        {screen==="ready"    && <GetReadyScreen stream={stream} remoteStream={remoteStream} tipIndex={tipIdx} onContinue={()=>{ setPhotos([]); setSelected([]); navigate("booth") }}/>} 
+        {screen==="ready"&&(
+          <GetReadyScreen
+            stream={stream}
+            remoteStream={remoteStream}
+            tipIndex={tipIdx}
+            skinSmoothing={skinSmoothing}
+            onSkinSmoothingChange={chooseSkinSmoothing}
+            onContinue={()=>{ setPhotos([]);setSelected([]);navigate("booth") }}
+          />
+        )}
         {screen==="booth"    && (
           <BoothScreen
-            stream={stream} remoteStream={remoteStream} themeId={themeId} propId={propId} layout={layout} captureAt={captureAt}
+            stream={stream} remoteStream={remoteStream} themeId={themeId} propId={propId} skinSmoothing={skinSmoothing} partnerSkinSmoothing={partnerSkinSmoothing} layout={layout} captureAt={captureAt}
             onCaptureRequest={requestCapture}
             onPhotoCapture={url=>setPhotos(p=>[...p,url])}
             onDone={()=>navigate("select")}

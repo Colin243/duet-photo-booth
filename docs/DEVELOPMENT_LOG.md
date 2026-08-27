@@ -62,6 +62,19 @@ without smoothing, preserving their hard retro edges as either person moves.
 Filters appear in both the live preview and captured photo while adding very
 little work to the existing tracking loop.
 
+### Optional participant-controlled skin softening
+
+The ready screen offers Natural, Soft, and Extra Soft settings. Natural is the
+default. Each participant chooses only their own level; a small peer-to-peer
+message carries that preference to the partner so both browsers render the same
+final composite without allowing either person to alter the other's setting.
+
+Softening is limited to an oval derived from the Pose Landmarker eye points. A
+low-opacity blurred copy is blended over the original face while the unfiltered
+frame remains beneath it, retaining eye detail, expression, hair, body edges,
+and tracked props. No facial images or beauty preferences are uploaded or
+stored, and the selected treatment is included in the captured photo.
+
 ### Theme reduction and realism pass
 
 The earlier Airplane, Kitchen, and Arcade scenes were removed. They were visually
