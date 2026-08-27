@@ -6,3 +6,7 @@ dist/
 .DS_Store
 prototype-v1/
 
+# Local visual QA and camera screenshots. These may contain private imagery and
+# must stay inside the Desktop project without being published to GitHub/Vercel.
+local-reviews/
+theme-previews/
