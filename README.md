@@ -6,6 +6,12 @@ A responsive virtual photo-booth MVP for couples in different places.
 
 https://duet-live-sigma.vercel.app
 
+## Development record
+
+See [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md) for the design research,
+theme decisions, camera-compositing approach, paired-browser test process, and
+deployment history used to reach the current build.
+
 ## Run locally
 
 ```bash
