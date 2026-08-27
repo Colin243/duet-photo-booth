@@ -141,22 +141,22 @@ const THEMES: {
   previewBg:string; dark:boolean; accent:string
 }[] = [
   { id:"classic",  name:"Classic Plain",emoji:"✦",   tagline:"The original clean booth",   previewBg:"linear-gradient(160deg,#ffffff,#dceeff)", dark:false, accent:"#C85B82" },
-  { id:"washer",   name:"Washer POV",    emoji:"◎",   tagline:"Camera inside, you outside", previewBg:"radial-gradient(circle,transparent 38%,rgba(20,25,27,.76) 66%),url('/theme-assets/laundromat-outside.jpg') center/cover", dark:true, accent:"#D6DEE0" },
+  { id:"washer",   name:"Washer POV",    emoji:"◌",   tagline:"Soft blue laundry-day dream", previewBg:"radial-gradient(circle,transparent 40%,rgba(214,238,247,.72) 68%),url('/theme-assets/laundromat-neutral-blue-v3.png') center/cover", dark:false, accent:"#84B9CF" },
   { id:"elevator", name:"Elevator CCTV", emoji:"REC", tagline:"Cute corner-camera set", previewBg:"linear-gradient(rgba(255,245,249,.04),rgba(255,245,249,.04)),url('/theme-assets/elevator-cctv-cute.jpg') center/cover", dark:false, accent:"#E99ABC" },
 ]
 
 const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
   {id:"none",name:"No filter",emoji:"○",tagline:"Keep it natural"},
-  {id:"glasses",name:"Pixel Hearts",emoji:"▦",tagline:"Y2K heart shades"},
-  {id:"partyHat",name:"Star Crown",emoji:"✦",tagline:"8-bit sparkle mode"},
-  {id:"catEars",name:"Retro Kitty",emoji:"♡",tagline:"Pixels, blush & ears"},
+  {id:"glasses",name:"XHS Heart Glow",emoji:"♡",tagline:"Glossy hearts and soft highlights"},
+  {id:"partyHat",name:"Douyin Star Halo",emoji:"✦",tagline:"Floating stars with camera glow"},
+  {id:"catEars",name:"Soft Kitty",emoji:"୨୧",tagline:"Plush ears, blush and whiskers"},
 ]
 
 const THEME_IMAGE_PATHS:Partial<Record<ThemeId,string>>={
-  washer:"/theme-assets/laundromat-outside.jpg",
+  washer:"/theme-assets/laundromat-neutral-blue-v3.png",
   elevator:"/theme-assets/elevator-cctv-cute.jpg",
 }
-const WASHER_RIM_IMAGE_PATH="/theme-assets/washer-drum.jpg"
+const WASHER_RIM_IMAGE_PATH="/theme-assets/washer-rim-neutral-blue-v3.png"
 const themeImageCache=new Map<string,HTMLImageElement>()
 
 const FILTERS: { id:FilterId; name:string; css:string }[] = [
@@ -258,7 +258,7 @@ function drawThemeBg(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:numbe
     drawCoverImage(ctx,image,W,H)
     if(id==="washer"){
       const depth=ctx.createRadialGradient(W*.5,H*.48,0,W*.5,H*.5,H*.7)
-      depth.addColorStop(0,"rgba(235,246,247,.06)");depth.addColorStop(1,"rgba(11,18,20,.24)")
+      depth.addColorStop(0,"rgba(255,255,255,.04)");depth.addColorStop(.68,"rgba(222,241,247,.05)");depth.addColorStop(1,"rgba(143,194,213,.18)")
       ctx.fillStyle=depth;ctx.fillRect(0,0,W,H)
     }
     if(id==="elevator"){
@@ -288,36 +288,36 @@ function drawThemeDetails(ctx:CanvasRenderingContext2D,id:ThemeId,W:number,H:num
 
 function drawWasherForeground(ctx:CanvasRenderingContext2D,W:number,H:number) {
   const image=getCachedImage(WASHER_RIM_IMAGE_PATH),opening=washerOpening(W,H)
-  // From inside the drum, everything outside the open door is the real
-  // laundromat. The dark perforated barrel and gasket remain close to camera.
+  // Keep the inside-the-door viewpoint, but use a bright pearly tunnel instead
+  // of the heavy black drum treatment used by an industrial washer.
   const tunnel=ctx.createRadialGradient(opening.x,opening.y,opening.r*.84,opening.x,opening.y,Math.max(W,H)*.68)
-  tunnel.addColorStop(0,"rgba(22,29,32,0)")
-  tunnel.addColorStop(.22,"rgba(38,47,50,.84)")
-  tunnel.addColorStop(.58,"rgba(15,20,22,.95)")
-  tunnel.addColorStop(1,"rgba(4,7,8,1)")
+  tunnel.addColorStop(0,"rgba(255,255,255,0)")
+  tunnel.addColorStop(.24,"rgba(218,239,247,.58)")
+  tunnel.addColorStop(.62,"rgba(250,249,242,.96)")
+  tunnel.addColorStop(1,"rgba(214,235,244,1)")
   ctx.fillStyle=tunnel;ctx.fillRect(0,0,W,H)
   if(image?.complete&&image.naturalWidth){
     ctx.save()
     ctx.beginPath();ctx.rect(0,0,W,H);ctx.ellipse(opening.x,opening.y,opening.r,opening.r,0,0,Math.PI*2)
     ctx.clip("evenodd")
-    ctx.globalAlpha=.58
-    const scale=Math.max(W/image.naturalWidth,H/image.naturalHeight)*1.52
+    ctx.globalAlpha=.92
+    const scale=Math.max(W/image.naturalWidth,H/image.naturalHeight)*1.28
     const width=image.naturalWidth*scale,height=image.naturalHeight*scale
     ctx.drawImage(image,(W-width)/2,(H-height)/2,width,height)
-    ctx.globalCompositeOperation="multiply";ctx.fillStyle="rgba(35,47,51,.78)";ctx.fillRect(0,0,W,H)
+    ctx.globalCompositeOperation="screen";ctx.fillStyle="rgba(215,241,248,.2)";ctx.fillRect(0,0,W,H)
     ctx.restore()
   }
   const gasket=ctx.createRadialGradient(opening.x-opening.r*.25,opening.y-opening.r*.3,opening.r*.45,opening.x,opening.y,opening.r*1.04)
   gasket.addColorStop(.78,"rgba(255,255,255,0)")
-  gasket.addColorStop(.86,"rgba(8,12,14,.62)")
-  gasket.addColorStop(.94,"rgba(162,178,180,.72)")
-  gasket.addColorStop(1,"rgba(26,34,37,.95)")
+  gasket.addColorStop(.86,"rgba(170,213,229,.58)")
+  gasket.addColorStop(.94,"rgba(255,244,238,.88)")
+  gasket.addColorStop(1,"rgba(126,180,203,.88)")
   ctx.fillStyle=gasket;ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*1.055,0,Math.PI*2);ctx.fill()
-  ctx.strokeStyle="rgba(16,22,25,.52)";ctx.lineWidth=Math.max(4,W*.008)
+  ctx.strokeStyle="rgba(102,164,190,.38)";ctx.lineWidth=Math.max(4,W*.008)
   ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*1.01,0,Math.PI*2);ctx.stroke()
-  ctx.strokeStyle="rgba(255,255,255,.4)";ctx.lineWidth=2
+  ctx.strokeStyle="rgba(255,255,255,.86)";ctx.lineWidth=3
   ctx.beginPath();ctx.arc(opening.x,opening.y,opening.r*.98,Math.PI*1.08,Math.PI*1.72);ctx.stroke()
-  ctx.fillStyle="rgba(210,224,224,.18)"
+  ctx.fillStyle="rgba(255,255,255,.42)"
   for(let ring=1.18;ring<1.68;ring+=.16){
     const count=34
     for(let i=0;i<count;i++){
@@ -326,7 +326,11 @@ function drawWasherForeground(ctx:CanvasRenderingContext2D,W:number,H:number) {
       ctx.beginPath();ctx.arc(opening.x+Math.cos(angle)*radius,opening.y+Math.sin(angle)*radius,1.25,0,Math.PI*2);ctx.fill()
     }
   }
-  drawVignette(ctx,W,H,.18)
+  ;[[.12,.18,5],[.86,.22,7],[.1,.78,8],[.9,.72,4]].forEach(([x,y,r])=>{
+    ctx.fillStyle="rgba(255,255,255,.38)";ctx.strokeStyle="rgba(117,184,208,.44)";ctx.lineWidth=1.5
+    ctx.beginPath();ctx.arc(W*x,H*y,r,0,Math.PI*2);ctx.fill();ctx.stroke()
+  })
+  drawVignette(ctx,W,H,.07)
 }
 
 function drawElevatorCctv(ctx:CanvasRenderingContext2D,W:number,H:number) {
@@ -467,82 +471,49 @@ function drawTrackedProp(
   if(angle<-Math.PI/2) angle+=Math.PI
 
   ctx.save();ctx.translate(centerX,centerY);ctx.rotate(angle)
-  ctx.imageSmoothingEnabled=false
-  ctx.lineJoin="miter";ctx.lineCap="square"
-  const px=Math.max(2,Math.round(eyeDistance*.075))
-  const block=(x:number,y:number,w:number,h:number,color:string)=>{
-    ctx.fillStyle=color
-    ctx.fillRect(Math.round(x/px)*px,Math.round(y/px)*px,Math.max(px,Math.round(w/px)*px),Math.max(px,Math.round(h/px)*px))
+  ctx.imageSmoothingEnabled=true;ctx.lineCap="round";ctx.lineJoin="round"
+  ctx.shadowColor="rgba(196,104,151,.22)";ctx.shadowBlur=eyeDistance*.18
+  const heart=(x:number,y:number,size:number,fill:string,stroke="rgba(255,255,255,.9)")=>{
+    ctx.save();ctx.translate(x,y);ctx.scale(size/24,size/24)
+    ctx.beginPath();ctx.moveTo(0,8);ctx.bezierCurveTo(-17,-2,-11,-14,-3,-10);ctx.bezierCurveTo(0,-8,1,-5,0,-2);ctx.bezierCurveTo(-1,-5,0,-8,3,-10);ctx.bezierCurveTo(11,-14,17,-2,0,8)
+    ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=1.8;ctx.stroke();ctx.restore()
   }
-  const pixelHeart=(x:number,y:number,size:number,color:string,outline="#3b2444")=>{
-    const u=Math.max(2,Math.round(size/7))
-    const rows=["0110110","1111111","1111111","0111110","0011100","0001000"]
-    rows.forEach((row,ry)=>[...row].forEach((cell,rx)=>{
-      if(cell==="1") block(x+(rx-3.5)*u,y+(ry-2.5)*u,u,u,outline)
-    }))
-    const inner=["0100010","0110110","0011100"]
-    inner.forEach((row,ry)=>[...row].forEach((cell,rx)=>{
-      if(cell==="1") block(x+(rx-3.5)*u,y+(ry-1.4)*u,u,u,color)
-    }))
-  }
-  const pixelStar=(x:number,y:number,size:number,color:string,outline="#40314f")=>{
-    const u=Math.max(2,Math.round(size/7))
-    const rows=["0001000","0101010","0011100","1111111","0011100","0101010","0001000"]
-    rows.forEach((row,ry)=>[...row].forEach((cell,rx)=>{
-      if(cell==="1") block(x+(rx-3.5)*u,y+(ry-3.5)*u,u,u,outline)
-    }))
-    block(x-u*.5,y-u*.5,u,u,color)
-    block(x-u*1.5,y-u*.5,u,u,color)
-    block(x+u*.5,y-u*.5,u,u,color)
-    block(x-u*.5,y-u*1.5,u,u,"#fff8d7")
+  const sparkle=(x:number,y:number,size:number,color:string)=>{
+    ctx.beginPath();ctx.moveTo(x,y-size);ctx.quadraticCurveTo(x+size*.2,y-size*.2,x+size,y);ctx.quadraticCurveTo(x+size*.2,y+size*.2,x,y+size);ctx.quadraticCurveTo(x-size*.2,y+size*.2,x-size,y);ctx.quadraticCurveTo(x-size*.2,y-size*.2,x,y-size);ctx.fillStyle=color;ctx.fill()
   }
   if(propId==="glasses"){
-    const lensW=eyeDistance*.88,lensH=eyeDistance*.58,lensY=-lensH*.3
+    const lensW=eyeDistance*.92,lensH=eyeDistance*.62
     ;[-1,1].forEach(side=>{
       const cx=side*eyeDistance*.53
-      block(cx-lensW*.58,lensY-lensH*.52,lensW*1.16,lensH*1.04,"#3b2444")
-      block(cx-lensW*.48,lensY-lensH*.4,lensW*.96,lensH*.8,"#ff7fb9")
-      block(cx-lensW*.36,lensY-lensH*.29,lensW*.72,lensH*.58,"rgba(105,226,238,.72)")
-      block(cx-lensW*.25,lensY-lensH*.2,lensW*.2,px,"#fff")
-      block(cx-lensW*.38,lensY-lensH*.07,px,lensH*.22,"rgba(255,255,255,.82)")
-      pixelHeart(cx+side*lensW*.46,lensY-lensH*.5,eyeDistance*.38,"#ffb2d4")
+      const lens=ctx.createLinearGradient(cx-lensW/2,-lensH/2,cx+lensW/2,lensH/2)
+      lens.addColorStop(0,"rgba(255,205,228,.92)");lens.addColorStop(.55,"rgba(164,236,245,.64)");lens.addColorStop(1,"rgba(255,255,255,.3)")
+      ctx.beginPath();ctx.ellipse(cx,-eyeDistance*.08,lensW*.55,lensH*.5,0,0,Math.PI*2);ctx.fillStyle=lens;ctx.fill();ctx.strokeStyle="#fff7fb";ctx.lineWidth=Math.max(2,eyeDistance*.07);ctx.stroke()
+      heart(cx+side*lensW*.42,-lensH*.5,eyeDistance*.34,"#ff8fbd")
     })
-    block(-eyeDistance*.12,lensY-px*.5,eyeDistance*.24,px*1.6,"#3b2444")
-    block(-eyeDistance*1.18,lensY-px*.5,eyeDistance*.28,px*1.4,"#3b2444")
-    block(eyeDistance*.9,lensY-px*.5,eyeDistance*.28,px*1.4,"#3b2444")
-    pixelStar(eyeDistance*1.38,-eyeDistance*.62,eyeDistance*.34,"#86ecff","#fff")
+    ctx.beginPath();ctx.moveTo(-eyeDistance*.12,-eyeDistance*.08);ctx.lineTo(eyeDistance*.12,-eyeDistance*.08);ctx.strokeStyle="#fff7fb";ctx.lineWidth=Math.max(2,eyeDistance*.07);ctx.stroke()
+    sparkle(eyeDistance*1.32,-eyeDistance*.68,eyeDistance*.18,"#fff")
   }
   if(propId==="partyHat"){
-    const bandY=-eyeDistance*.8
-    block(-eyeDistance*.96,bandY,eyeDistance*1.92,px*1.7,"#463052")
-    block(-eyeDistance*.86,bandY-px*.12,eyeDistance*1.72,px,"#f18fc1")
-    pixelStar(-eyeDistance*.72,-eyeDistance*1.12,eyeDistance*.62,"#ff8cc4")
-    pixelStar(0,-eyeDistance*1.48,eyeDistance*.84,"#89eafa")
-    pixelStar(eyeDistance*.72,-eyeDistance*1.12,eyeDistance*.62,"#ffe271")
-    block(-eyeDistance*.48,-eyeDistance*1.78,px,px,"#fff")
-    block(eyeDistance*.55,-eyeDistance*1.72,px,px,"#fff")
-    block(-eyeDistance*1.18,-eyeDistance*1.35,px*2,px*.8,"#91edff")
-    block(-eyeDistance*1.18-px*.6,-eyeDistance*1.35-px*.6,px*.8,px*2,"#91edff")
+    const colors=["#ff9fc8","#8fe5f2","#ffe69a"]
+    ;[-.72,0,.72].forEach((side,index)=>{
+      const y=-eyeDistance*(index===1?1.42:1.08),size=eyeDistance*(index===1?.38:.28)
+      sparkle(side*eyeDistance,y,size,colors[index]);sparkle(side*eyeDistance,y,size*.48,"#fff")
+    })
+    ctx.beginPath();ctx.arc(0,-eyeDistance*.78,eyeDistance*.98,Math.PI*1.12,Math.PI*1.88)
+    ctx.strokeStyle="rgba(255,255,255,.78)";ctx.lineWidth=Math.max(2,eyeDistance*.045);ctx.stroke()
+    ;[-1.18,1.18].forEach(side=>sparkle(side*eyeDistance,-eyeDistance*.48,eyeDistance*.13,"rgba(255,255,255,.9)"))
   }
   if(propId==="catEars"){
-    const y=-eyeDistance*.72
-    block(-eyeDistance*.92,y,eyeDistance*1.84,px*1.6,"#49324f")
+    const baseY=-eyeDistance*.7
     ;[-1,1].forEach(side=>{
       const cx=side*eyeDistance*.62
-      const earW=eyeDistance*.7,earH=eyeDistance*.9
-      ctx.fillStyle="#49324f"
-      ctx.beginPath();ctx.moveTo(cx-earW/2,y);ctx.lineTo(cx+earW/2,y);ctx.lineTo(cx+side*earW*.2,y-earH);ctx.closePath();ctx.fill()
-      ctx.fillStyle="#ff9fc7"
-      ctx.beginPath();ctx.moveTo(cx-earW*.2,y-px);ctx.lineTo(cx+earW*.2,y-px);ctx.lineTo(cx+side*earW*.16,y-earH*.66);ctx.closePath();ctx.fill()
-      block(side*eyeDistance*.78,eyeDistance*.37,eyeDistance*.34,px*1.3,"rgba(255,125,176,.78)")
-      block(side*eyeDistance*.92,eyeDistance*.31,px,px,"#fff")
+      ctx.beginPath();ctx.moveTo(cx-eyeDistance*.34,baseY);ctx.quadraticCurveTo(cx,baseY-eyeDistance*.92,cx+eyeDistance*.34,baseY);ctx.closePath();ctx.fillStyle="#fff5fa";ctx.fill();ctx.strokeStyle="rgba(214,126,171,.8)";ctx.lineWidth=Math.max(2,eyeDistance*.045);ctx.stroke()
+      ctx.beginPath();ctx.moveTo(cx-eyeDistance*.17,baseY-eyeDistance*.08);ctx.quadraticCurveTo(cx,baseY-eyeDistance*.58,cx+eyeDistance*.17,baseY-eyeDistance*.08);ctx.closePath();ctx.fillStyle="rgba(255,157,199,.7)";ctx.fill()
+      const blush=ctx.createRadialGradient(side*eyeDistance*.78,eyeDistance*.42,0,side*eyeDistance*.78,eyeDistance*.42,eyeDistance*.32)
+      blush.addColorStop(0,"rgba(255,117,169,.5)");blush.addColorStop(1,"rgba(255,117,169,0)");ctx.fillStyle=blush;ctx.beginPath();ctx.ellipse(side*eyeDistance*.78,eyeDistance*.42,eyeDistance*.38,eyeDistance*.2,0,0,Math.PI*2);ctx.fill()
+      ;[-.08,.08].forEach(offset=>{ctx.beginPath();ctx.moveTo(side*eyeDistance*.7,eyeDistance*(.42+offset));ctx.lineTo(side*eyeDistance*1.25,eyeDistance*(.34+offset));ctx.strokeStyle="rgba(255,255,255,.9)";ctx.lineWidth=Math.max(1.5,eyeDistance*.025);ctx.stroke()})
     })
-    block(-px*.55,eyeDistance*.42,px*1.1,px*.8,"#ff75ad")
-    block(-eyeDistance*1.23,eyeDistance*.38,eyeDistance*.52,px*.55,"#fff")
-    block(-eyeDistance*1.2,eyeDistance*.55,eyeDistance*.5,px*.55,"#fff")
-    block(eyeDistance*.71,eyeDistance*.38,eyeDistance*.52,px*.55,"#fff")
-    block(eyeDistance*.7,eyeDistance*.55,eyeDistance*.5,px*.55,"#fff")
-    pixelHeart(eyeDistance*1.3,-eyeDistance*.78,eyeDistance*.34,"#ff9fc7","#fff")
+    heart(0,eyeDistance*.42,eyeDistance*.22,"#ff8ab8")
   }
   ctx.restore()
 }
@@ -565,23 +536,41 @@ function drawSkinSoftening(
   const left=point(leftEye),right=point(rightEye)
   const eyeDistance=Math.hypot(right.x-left.x,right.y-left.y)
   if(!Number.isFinite(eyeDistance)||eyeDistance<5) return
+  const angle=Math.atan2(right.y-left.y,right.x-left.x)
   const centerX=(left.x+right.x)/2
   const centerY=(left.y+right.y)/2+eyeDistance*.5
   const radiusX=eyeDistance*1.14
   const radiusY=eyeDistance*1.42
 
-  // Blend a low-opacity blurred copy only over the face oval. The original
-  // frame remains beneath it, keeping eyes, expression, hair, and props crisp.
+  // Follow social-camera retouching conventions: soften low-frequency skin
+  // texture inside the face only, then restore high-detail eye and nose zones.
+  // This keeps identity, glasses, expressions, and facial contours intact.
   ctx.save()
   ctx.beginPath();ctx.ellipse(centerX,centerY,radiusX,radiusY,0,0,Math.PI*2);ctx.clip()
-  ctx.filter=`blur(${strength===1?2.2:4}px)`
-  ctx.globalAlpha=strength===1?.24:.38
+  ctx.filter=`brightness(${strength===1?1.012:1.022}) saturate(${strength===1?.995:.985}) blur(${strength===1?1.65:2.75}px)`
+  ctx.globalAlpha=strength===1?.2:.3
   ctx.drawImage(scratch,drawX,drawY,drawW,drawH,drawX,drawY,drawW,drawH)
   ctx.filter="none"
   const glow=ctx.createRadialGradient(centerX-eyeDistance*.2,centerY-eyeDistance*.35,0,centerX,centerY,radiusY)
   glow.addColorStop(0,`rgba(255,239,235,${strength===1?.055:.085})`)
   glow.addColorStop(1,"rgba(255,239,235,0)")
   ctx.globalAlpha=1;ctx.fillStyle=glow;ctx.fillRect(centerX-radiusX,centerY-radiusY,radiusX*2,radiusY*2)
+  ctx.restore()
+
+  // Repaint small facial-detail islands from the untouched frame. Keeping the
+  // eyes and center features crisp avoids the waxy, whole-face blur look.
+  ctx.save()
+  ctx.beginPath()
+  ctx.ellipse(left.x,left.y,eyeDistance*.38,eyeDistance*.24,angle,0,Math.PI*2)
+  ctx.ellipse(right.x,right.y,eyeDistance*.38,eyeDistance*.24,angle,0,Math.PI*2)
+  ctx.ellipse(centerX,centerY+eyeDistance*.26,eyeDistance*.3,eyeDistance*.4,angle,0,Math.PI*2)
+  ctx.clip();ctx.globalAlpha=strength===1?.7:.62
+  ctx.drawImage(scratch,drawX,drawY,drawW,drawH,drawX,drawY,drawW,drawH)
+  ctx.restore()
+
+  // Very restrained eye brilliance—localized highlights, not eye reshaping.
+  ctx.save();ctx.globalAlpha=strength===1?.12:.2;ctx.fillStyle="#fff"
+  ;[left,right].forEach(eye=>{ctx.beginPath();ctx.arc(eye.x-eyeDistance*.045,eye.y-eyeDistance*.04,Math.max(1,eyeDistance*.035),0,Math.PI*2);ctx.fill()})
   ctx.restore()
 }
 
@@ -933,7 +922,7 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
       <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:680, textAlign:"center" }}>
         <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  2 / 3</p>
         <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Choose your scene</h2>
-        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Choose a shared background, then add an optional face-tracked retro filter for both of you.</p>
+        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Choose a shared background, then add an optional face-tracked social-camera filter for both of you.</p>
 
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(156px,1fr))", gap:12, marginBottom:24 }}>
           {THEMES.map(t=>(
@@ -946,18 +935,18 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
           ))}
         </div>
 
-        <div style={{ backgroundColor:"rgba(255,255,255,.82)",backgroundImage:"linear-gradient(90deg,rgba(200,91,130,.045) 1px,transparent 1px),linear-gradient(rgba(200,91,130,.045) 1px,transparent 1px)",backgroundSize:"10px 10px",border:"2px solid #3B2444",borderRadius:8,padding:"18px",marginBottom:28,boxShadow:"6px 6px 0 rgba(200,91,130,.18)" }}>
-          <p style={{ fontFamily:"ui-monospace,SFMono-Regular,monospace",fontSize:11,letterSpacing:".14em",color:"#C85B82",fontWeight:900,marginBottom:12 }}>SHARED RETRO FILTER · PX</p>
+        <div style={{ background:"linear-gradient(145deg,rgba(255,255,255,.94),rgba(255,240,247,.82))",border:"1px solid rgba(200,91,130,.2)",borderRadius:18,padding:"18px",marginBottom:28,boxShadow:"0 12px 32px rgba(115,71,98,.1)" }}>
+          <p style={{ fontSize:11,letterSpacing:".14em",color:"#C85B82",fontWeight:900,marginBottom:12 }}>SHARED FACE FILTERS · LIVE</p>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(118px,1fr))",gap:9 }}>
             {PROPS.map(prop=>(
-              <button key={prop.id} onClick={()=>onPropSelect(prop.id)} style={{ borderRadius:4,padding:"12px 6px",border:`2px solid ${selectedProp===prop.id?"#C85B82":"#D8C7D2"}`,background:selectedProp===prop.id?"#fff":"rgba(255,255,255,.62)",boxShadow:selectedProp===prop.id?"3px 3px 0 #3B2444":"2px 2px 0 rgba(59,36,68,.18)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all .16s",transform:selectedProp===prop.id?"translate(-1px,-1px)":"none" }}>
-                <span style={{ fontFamily:"ui-monospace,SFMono-Regular,monospace",fontSize:23,lineHeight:1,color:selectedProp===prop.id?"#C85B82":"#6C536A",textShadow:selectedProp===prop.id?"2px 2px 0 #9DECF3":"none" }}>{prop.emoji}</span>
-                <span style={{ fontFamily:"ui-monospace,SFMono-Regular,monospace",fontSize:10,fontWeight:900,color:"#2D1B2E",textTransform:"uppercase" }}>{prop.name}</span>
+              <button key={prop.id} onClick={()=>onPropSelect(prop.id)} style={{ borderRadius:13,padding:"12px 6px",border:`1.5px solid ${selectedProp===prop.id?"#C85B82":"#E7D9E2"}`,background:selectedProp===prop.id?"linear-gradient(145deg,#fff,#FFF1F7)":"rgba(255,255,255,.7)",boxShadow:selectedProp===prop.id?"0 7px 18px rgba(200,91,130,.18)":"0 3px 10px rgba(59,36,68,.06)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all .16s",transform:selectedProp===prop.id?"translateY(-2px)":"none" }}>
+                <span style={{ fontSize:23,lineHeight:1,color:selectedProp===prop.id?"#C85B82":"#6C536A",textShadow:selectedProp===prop.id?"0 2px 10px rgba(200,91,130,.28)":"none" }}>{prop.emoji}</span>
+                <span style={{ fontSize:10,fontWeight:900,color:"#2D1B2E",textTransform:"uppercase",letterSpacing:".04em" }}>{prop.name}</span>
                 <span style={{ fontSize:9,color:"#9B7B90",lineHeight:1.3 }}>{prop.tagline}</span>
               </button>
             ))}
           </div>
-          <p style={{ fontSize:10,color:"#8F7287",marginTop:12 }}>Low-resolution edges are intentional. The same filter follows both faces and stays synchronized across the room.</p>
+          <p style={{ fontSize:10,color:"#8F7287",marginTop:12 }}>Soft highlights, blush and accessories follow both faces and stay synchronized across the room.</p>
         </div>
 
         <button onClick={onContinue} style={{ width:"100%", padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}>
@@ -1004,7 +993,7 @@ function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmo
 
         {/* Camera preview */}
         <div style={{ position:"relative", borderRadius:22, overflow:"hidden", background:"#111", aspectRatio:"4/3", maxWidth:380, margin:"0 auto 24px", boxShadow:"0 10px 44px rgba(0,0,0,0.18)" }}>
-          <video ref={vidRef} autoPlay playsInline muted style={{ width:"100%", height:"100%", objectFit:"cover", transform:"scaleX(-1)", display:"block",filter:skinSmoothing===0?"none":skinSmoothing===1?"brightness(1.02) saturate(.98) blur(.35px)":"brightness(1.035) saturate(.96) blur(.65px)" }}/>
+          <video ref={vidRef} autoPlay playsInline muted style={{ width:"100%", height:"100%", objectFit:"cover", transform:"scaleX(-1)", display:"block",filter:skinSmoothing===0?"none":skinSmoothing===1?"brightness(1.012) saturate(.995)":"brightness(1.022) saturate(.985)" }}/>
           {remoteStream&&<video ref={remoteRef} autoPlay playsInline style={{ position:"absolute", right:12, bottom:12, width:"34%", aspectRatio:"4/3", objectFit:"cover", transform:"scaleX(-1)", borderRadius:14, border:"3px solid #fff", boxShadow:"0 8px 24px rgba(0,0,0,.25)" }}/>} 
           {!ready&&(
             <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14, color:"rgba(255,255,255,0.7)" }}>
@@ -1029,7 +1018,7 @@ function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmo
             <span style={{ fontSize:9,color:"#A78B9E" }}>Your choice only</span>
           </div>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8 }}>
-            {([[0,"Natural"],[1,"Soft"],[2,"Extra soft"]] as [SkinSmoothing,string][]).map(([value,label])=>(
+            {([[0,"Natural"],[1,"Soft retouch"],[2,"Glow retouch"]] as [SkinSmoothing,string][]).map(([value,label])=>(
               <button key={value} onClick={()=>onSkinSmoothingChange(value)} style={{ border:`1.5px solid ${skinSmoothing===value?"#C85B82":"#E6D9E1"}`,borderRadius:10,padding:"9px 6px",background:skinSmoothing===value?"#FFF4F8":"#fff",color:skinSmoothing===value?"#A7466A":"#755F70",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:11,cursor:"pointer",boxShadow:skinSmoothing===value?"0 3px 10px rgba(200,91,130,.12)":"none" }}>
                 {label}
               </button>
