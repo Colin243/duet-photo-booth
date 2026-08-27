@@ -19,6 +19,7 @@ The working principles are:
 - Keep camera processing on-device and avoid permanent photo storage.
 - Use scenes that resemble believable photo-booth sets rather than generic effects.
 - Test every major visual change with two connected browser cameras before deployment.
+- Keep a plain original booth available even as playful scenes and effects are added.
 
 ## Iteration history
 
@@ -40,6 +41,19 @@ large pieces of the original room.
 Tracked points also guide horizontal framing. The full vertical camera frame is
 kept available so raising an arm does not cause an internal crop halfway through
 the booth rectangle.
+
+### Shared face-tracked props
+
+Classic Plain remains the original no-frills booth. A separate optional prop
+choice adds Funky Glasses, Party Hat, or Cat Ears without replacing that scene.
+The prop choice is part of the synchronized room state, so either participant's
+selection updates both browsers and the same prop appears on both people.
+
+The first prop pass reuses Pose Landmarker eye points instead of loading a third
+computer-vision model. Eye spacing controls scale, the line between the eyes
+controls rotation, and each person's crop transform maps the prop into the final
+composite. Props are therefore rendered into both the live preview and captured
+photo while adding very little work to the existing tracking loop.
 
 ### Theme reduction and realism pass
 

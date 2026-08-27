@@ -28,8 +28,9 @@ Open the local URL shown by Vite. Camera access requires `localhost` or HTTPS.
 - Synchronized layout, theme, navigation, and shutter countdown
 - Classic and wide strip layouts
 - Three polished booth themes: Classic, an inside-the-washer-drum view, and a combined Elevator CCTV scene
+- Optional synchronized face-tracked props for both participants: funky glasses, party hats, and cat ears
 - Bundled public-domain/CC0 photography with source and license records in `public/theme-assets/LICENSES.md`
-- On-device MediaPipe pose and hand tracking merged into full-person masks
+- On-device MediaPipe pose and hand tracking merged into full-person masks and shared AR-prop placement
 - Browser camera capture with a five-second countdown
 - Ten-shot contact sheet and ordered selection
 - Filters, frames, stickers, names, date, and photo repositioning

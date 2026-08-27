@@ -111,10 +111,11 @@ const GLOBAL_CSS = `
 type Screen = "landing"|"room"|"layout"|"theme"|"ready"|"booth"|"select"|"customize"|"reveal"
 type Layout  = "classic"|"wide"
 type ThemeId = "classic"|"washer"|"elevator"
+type PropId = "none"|"glasses"|"partyHat"|"catEars"
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
 
 type SyncMessage =
-  | { type:"STATE"; screen:Screen; layout:Layout; themeId:ThemeId }
+  | { type:"STATE"; screen:Screen; layout:Layout; themeId:ThemeId; propId:PropId }
   | { type:"CAPTURE"; at:number }
 
 interface StickerItem { id:string; emoji:string; x:number; y:number; rot:number }
@@ -137,9 +138,16 @@ const THEMES: {
   id:ThemeId; name:string; emoji:string; tagline:string;
   previewBg:string; dark:boolean; accent:string
 }[] = [
-  { id:"classic",  name:"Classic",      emoji:"✦",   tagline:"Soft daylight booth",       previewBg:"linear-gradient(160deg,#ffffff,#dceeff)", dark:false, accent:"#C85B82" },
+  { id:"classic",  name:"Classic Plain",emoji:"✦",   tagline:"The original clean booth",   previewBg:"linear-gradient(160deg,#ffffff,#dceeff)", dark:false, accent:"#C85B82" },
   { id:"washer",   name:"Washer Drum",   emoji:"◎",   tagline:"Peek in through the door",  previewBg:"url('/theme-assets/washer-drum.jpg') center/cover", dark:false, accent:"#52616A" },
   { id:"elevator", name:"Elevator CCTV", emoji:"REC", tagline:"Caught inside the lift",    previewBg:"linear-gradient(rgba(8,18,20,.25),rgba(8,18,20,.25)),url('/theme-assets/elevator-cabin.jpg') center/cover", dark:true, accent:"#D8E3DE" },
+]
+
+const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
+  {id:"none",name:"No prop",emoji:"○",tagline:"Keep it classic"},
+  {id:"glasses",name:"Funky Glasses",emoji:"😎",tagline:"Tinted and oversized"},
+  {id:"partyHat",name:"Party Hat",emoji:"🥳",tagline:"A little celebration"},
+  {id:"catEars",name:"Cat Ears",emoji:"🐱",tagline:"Soft and playful"},
 ]
 
 const THEME_IMAGE_PATHS:Partial<Record<ThemeId,string>>={
@@ -401,11 +409,82 @@ function boundsFromTracking(
   }
 }
 
+function drawTrackedProp(
+  ctx:CanvasRenderingContext2D,
+  propId:PropId,
+  pose:NormalizedLandmark[],
+  tracked:PersonBounds,
+  drawX:number,drawY:number,drawW:number,drawH:number
+) {
+  if(propId==="none") return
+  const leftEye=pose[2],rightEye=pose[5]
+  if(!leftEye||!rightEye||(leftEye.visibility??1)<.35||(rightEye.visibility??1)<.35) return
+  const point=(landmark:NormalizedLandmark)=>({
+    x:drawX+((landmark.x-tracked.x)/tracked.width)*drawW,
+    y:drawY+((landmark.y-tracked.y)/tracked.height)*drawH,
+  })
+  const left=point(leftEye),right=point(rightEye)
+  const dx=right.x-left.x,dy=right.y-left.y
+  const eyeDistance=Math.hypot(dx,dy)
+  if(!Number.isFinite(eyeDistance)||eyeDistance<5) return
+  const centerX=(left.x+right.x)/2,centerY=(left.y+right.y)/2
+  const angle=Math.atan2(dy,dx)
+
+  ctx.save();ctx.translate(centerX,centerY);ctx.rotate(angle)
+  ctx.lineJoin="round";ctx.lineCap="round"
+  if(propId==="glasses"){
+    const lensW=eyeDistance*.92,lensH=eyeDistance*.62,gap=eyeDistance*.08
+    ctx.shadowColor="rgba(30,14,38,.3)";ctx.shadowBlur=8;ctx.shadowOffsetY=3
+    ;[-1,1].forEach(side=>{
+      const x=side*(lensW/2+gap/2)-lensW/2
+      ctx.beginPath();rRect(ctx,x,-lensH*.43,lensW,lensH,lensH*.28)
+      ctx.fillStyle="rgba(166,89,198,.38)";ctx.fill()
+      ctx.strokeStyle="#35213d";ctx.lineWidth=Math.max(3,eyeDistance*.1);ctx.stroke()
+      ctx.strokeStyle="rgba(255,255,255,.7)";ctx.lineWidth=Math.max(1,eyeDistance*.025)
+      ctx.beginPath();ctx.moveTo(x+lensW*.18,-lensH*.25);ctx.lineTo(x+lensW*.48,-lensH*.34);ctx.stroke()
+    })
+    ctx.shadowColor="transparent";ctx.strokeStyle="#35213d";ctx.lineWidth=Math.max(3,eyeDistance*.09)
+    ctx.beginPath();ctx.moveTo(-gap/2,-lensH*.05);ctx.lineTo(gap/2,-lensH*.05);ctx.stroke()
+    ctx.beginPath();ctx.moveTo(-lensW-gap/2,-lensH*.08);ctx.lineTo(-lensW-eyeDistance*.35,-lensH*.2);ctx.stroke()
+    ctx.beginPath();ctx.moveTo(lensW+gap/2,-lensH*.08);ctx.lineTo(lensW+eyeDistance*.35,-lensH*.2);ctx.stroke()
+  }
+  if(propId==="partyHat"){
+    const baseY=-eyeDistance*.7,half=eyeDistance*.82,tipY=-eyeDistance*2.65
+    const cone=ctx.createLinearGradient(-half,baseY,half,tipY)
+    cone.addColorStop(0,"#ffcb4c");cone.addColorStop(.5,"#ef6b9d");cone.addColorStop(1,"#8d6bd1")
+    ctx.shadowColor="rgba(30,14,38,.28)";ctx.shadowBlur=10;ctx.shadowOffsetY=4
+    ctx.beginPath();ctx.moveTo(-half,baseY);ctx.lineTo(half,baseY);ctx.lineTo(eyeDistance*.12,tipY);ctx.closePath();ctx.fillStyle=cone;ctx.fill()
+    ctx.strokeStyle="rgba(255,255,255,.9)";ctx.lineWidth=Math.max(2,eyeDistance*.06)
+    for(let i=-2;i<=2;i++){
+      const x=i*half*.32,y=baseY-(2-Math.abs(i))*(tipY-baseY)*-.18
+      ctx.beginPath();ctx.arc(x,y,eyeDistance*.08,0,Math.PI*2);ctx.stroke()
+    }
+    ctx.shadowColor="transparent";ctx.fillStyle="#fff4bd";ctx.beginPath();ctx.arc(eyeDistance*.12,tipY,eyeDistance*.2,0,Math.PI*2);ctx.fill()
+    ctx.strokeStyle="#ef6b9d";ctx.lineWidth=Math.max(3,eyeDistance*.1);ctx.beginPath();ctx.moveTo(-half*1.05,baseY);ctx.lineTo(half*1.05,baseY);ctx.stroke()
+  }
+  if(propId==="catEars"){
+    const y=-eyeDistance*.68,outer=eyeDistance*1.1,earW=eyeDistance*.72,earH=eyeDistance*1.25
+    ctx.shadowColor="rgba(30,14,38,.25)";ctx.shadowBlur=9;ctx.shadowOffsetY=3
+    ;[-1,1].forEach(side=>{
+      const cx=side*outer*.52
+      ctx.beginPath();ctx.moveTo(cx-earW/2,y);ctx.lineTo(cx+earW/2,y);ctx.lineTo(cx+side*earW*.18,y-earH);ctx.closePath()
+      ctx.fillStyle="#50364f";ctx.fill();ctx.strokeStyle="#fff";ctx.lineWidth=Math.max(2,eyeDistance*.05);ctx.stroke()
+      ctx.beginPath();ctx.moveTo(cx-earW*.25,y-eyeDistance*.12);ctx.lineTo(cx+earW*.25,y-eyeDistance*.12);ctx.lineTo(cx+side*earW*.14,y-earH*.72);ctx.closePath()
+      ctx.fillStyle="#ef9eb7";ctx.fill()
+    })
+    ctx.shadowColor="transparent";ctx.strokeStyle="#50364f";ctx.lineWidth=Math.max(4,eyeDistance*.11)
+    ctx.beginPath();ctx.arc(0,y+eyeDistance*.18,outer*.72,Math.PI*1.08,Math.PI*1.92);ctx.stroke()
+  }
+  ctx.restore()
+}
+
 function drawPersonCutout(
   ctx:CanvasRenderingContext2D,
   video:HTMLVideoElement,
   mask:HTMLCanvasElement,
   personBounds:PersonBounds|null,
+  pose:NormalizedLandmark[],
+  propId:PropId,
   scratch:HTMLCanvasElement,
   x:number, y:number, width:number, height:number,
   mirrored=true
@@ -439,6 +518,8 @@ function drawPersonCutout(
   ctx.shadowOffsetY=8
   if(mirrored){ ctx.translate(drawX*2+drawW,0); ctx.scale(-1,1) }
   ctx.drawImage(scratch,drawX,drawY,drawW,drawH,drawX,drawY,drawW,drawH)
+  ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0
+  drawTrackedProp(ctx,propId,pose,tracked,drawX,drawY,drawW,drawH)
   ctx.restore()
 }
 
@@ -448,11 +529,14 @@ function drawBoothFrame(
   partnerVideo:HTMLVideoElement|null,
   W:number, H:number,
   themeId:ThemeId,
+  propId:PropId,
   proximity:number,
   localMask:HTMLCanvasElement|null,
   partnerMask:HTMLCanvasElement|null,
   localBounds:PersonBounds|null,
   partnerBounds:PersonBounds|null,
+  localPose:NormalizedLandmark[],
+  partnerPose:NormalizedLandmark[],
   localScratch:HTMLCanvasElement,
   partnerScratch:HTMLCanvasElement
 ) {
@@ -474,12 +558,12 @@ function drawBoothFrame(
   }
 
   if(video.readyState>=2&&localMask) {
-    drawPersonCutout(ctx,video,localMask,localBounds,localScratch,youX,pY,pW,pH,true)
+    drawPersonCutout(ctx,video,localMask,localBounds,localPose,propId,localScratch,youX,pY,pW,pH,true)
   }
 
   const partnerReady=Boolean(partnerVideo&&partnerVideo.readyState>=2&&partnerMask)
   if(partnerReady&&partnerVideo&&partnerMask){
-    drawPersonCutout(ctx,partnerVideo,partnerMask,partnerBounds,partnerScratch,partX,pY,pW,pH,true)
+    drawPersonCutout(ctx,partnerVideo,partnerMask,partnerBounds,partnerPose,propId,partnerScratch,partX,pY,pW,pH,true)
   } else {
       ctx.save(); ctx.beginPath(); rRect(ctx,partX,pY,pW,pH,8)
       ctx.fillStyle="rgba(255,255,255,.24)"; ctx.fill()
@@ -729,8 +813,8 @@ function LayoutScreen({ selected, onSelect, onContinue }:{
 // THEME SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ThemeScreen({ selected, onSelect, onContinue }:{
-  selected:ThemeId; onSelect:(t:ThemeId)=>void; onContinue:()=>void
+function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:{
+  selected:ThemeId;selectedProp:PropId;onSelect:(t:ThemeId)=>void;onPropSelect:(p:PropId)=>void;onContinue:()=>void
 }) {
   return (
     <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 20px", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
@@ -738,9 +822,9 @@ function ThemeScreen({ selected, onSelect, onContinue }:{
       <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:680, textAlign:"center" }}>
         <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  2 / 3</p>
         <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Choose your scene</h2>
-        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Backgrounds, overlays, and effects transport you both somewhere special.</p>
+        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Choose a shared background, then add an optional face-tracked prop for both of you.</p>
 
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(156px,1fr))", gap:12, marginBottom:32 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(156px,1fr))", gap:12, marginBottom:24 }}>
           {THEMES.map(t=>(
             <button key={t.id} onClick={()=>onSelect(t.id)} style={{ background:t.previewBg, borderRadius:18, padding:"24px 14px", border:`2.5px solid ${selected===t.id?t.accent:"transparent"}`, cursor:"pointer", transition:"all 0.24s", boxShadow:selected===t.id?`0 4px 22px ${t.accent}55`:"0 2px 10px rgba(0,0,0,0.08)", transform:selected===t.id?"scale(1.04)":"scale(1)", display:"flex", flexDirection:"column", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:26 }}>{t.emoji}</span>
@@ -749,6 +833,20 @@ function ThemeScreen({ selected, onSelect, onContinue }:{
               {selected===t.id&&<div style={{ width:22, height:22, borderRadius:"50%", background:t.accent, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 0 0 3px rgba(255,255,255,0.28)` }}><Check size={11} color="#fff" strokeWidth={3}/></div>}
             </button>
           ))}
+        </div>
+
+        <div style={{ background:"rgba(255,255,255,.72)",border:"1px solid rgba(200,91,130,.12)",borderRadius:20,padding:"18px",marginBottom:28 }}>
+          <p style={{ fontSize:11,letterSpacing:".16em",color:"#C85B82",fontWeight:800,marginBottom:12 }}>SHARED CAMERA PROP</p>
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(118px,1fr))",gap:9 }}>
+            {PROPS.map(prop=>(
+              <button key={prop.id} onClick={()=>onPropSelect(prop.id)} style={{ borderRadius:14,padding:"12px 6px",border:`2px solid ${selectedProp===prop.id?"#C85B82":"transparent"}`,background:selectedProp===prop.id?"#fff":"rgba(255,255,255,.58)",boxShadow:selectedProp===prop.id?"0 5px 18px rgba(200,91,130,.18)":"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all .2s" }}>
+                <span style={{ fontSize:23 }}>{prop.emoji}</span>
+                <span style={{ fontSize:11,fontWeight:800,color:"#2D1B2E" }}>{prop.name}</span>
+                <span style={{ fontSize:9,color:"#9B7B90",lineHeight:1.3 }}>{prop.tagline}</span>
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize:10,color:"#B39AAA",marginTop:10 }}>The same selection follows both faces and stays synchronized across the room.</p>
         </div>
 
         <button onClick={onContinue} style={{ width:"100%", padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}>
@@ -834,8 +932,8 @@ function GetReadyScreen({ stream, remoteStream, tipIndex, onContinue }:{
 // BOOTH SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptureRequest, onPhotoCapture, onDone }:{
-  stream:MediaStream|null; remoteStream:MediaStream|null; themeId:ThemeId; layout:Layout; captureAt:number|null;
+function BoothScreen({ stream, remoteStream, themeId,propId,layout,captureAt,onCaptureRequest,onPhotoCapture,onDone }:{
+  stream:MediaStream|null;remoteStream:MediaStream|null;themeId:ThemeId;propId:PropId;layout:Layout;captureAt:number|null;
   onCaptureRequest:()=>void; onPhotoCapture:(dataUrl:string)=>void; onDone:()=>void
 }) {
   const vidRef      = useRef<HTMLVideoElement>(null)
@@ -852,6 +950,8 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
   const partnerScratchRef=useRef(document.createElement("canvas"))
   const localBoundsRef=useRef<PersonBounds|null>(null)
   const partnerBoundsRef=useRef<PersonBounds|null>(null)
+  const localPoseRef=useRef<NormalizedLandmark[]>([])
+  const partnerPoseRef=useRef<NormalizedLandmark[]>([])
   const lastSegmentRef=useRef(0)
   const trackerTimestampRef=useRef(0)
   const segmentBusyRef=useRef(false)
@@ -926,12 +1026,13 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
     }
   },[])
 
-  const updatePersonMask=useCallback((video:HTMLVideoElement,maskCanvas:HTMLCanvasElement,supportCanvas:HTMLCanvasElement,boundsRef:MutableRefObject<PersonBounds|null>,onFirstMask:()=>void,timestamp:number)=>{
+  const updatePersonMask=useCallback((video:HTMLVideoElement,maskCanvas:HTMLCanvasElement,supportCanvas:HTMLCanvasElement,boundsRef:MutableRefObject<PersonBounds|null>,poseRef:MutableRefObject<NormalizedLandmark[]>,onFirstMask:()=>void,timestamp:number)=>{
     const poseTracker=poseTrackerRef.current, handTracker=handTrackerRef.current
     if(!poseTracker||!handTracker||video.readyState<2||!video.videoWidth) return
     const hands=handTracker.detectForVideo(video,timestamp).landmarks
     poseTracker.detectForVideo(video,timestamp,result=>{
       const pose=result.landmarks[0]||[]
+      poseRef.current=pose
       const mask=result.segmentationMasks?.[0]
       if(!mask) return
       const width=mask.width, height=mask.height
@@ -971,11 +1072,11 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
         segmentBusyRef.current=true
         try{
           const localTimestamp=Math.max(Math.floor(now),trackerTimestampRef.current+2)
-          updatePersonMask(video,localMaskRef.current,localSupportRef.current,localBoundsRef,()=>{
+          updatePersonMask(video,localMaskRef.current,localSupportRef.current,localBoundsRef,localPoseRef,()=>{
             if(!localMaskReadyRef.current){ localMaskReadyRef.current=true; setLocalMaskReady(true) }
           },localTimestamp)
           const partner=partnerRef.current
-          if(partner&&remoteStream) updatePersonMask(partner,partnerMaskRef.current,partnerSupportRef.current,partnerBoundsRef,()=>{
+          if(partner&&remoteStream) updatePersonMask(partner,partnerMaskRef.current,partnerSupportRef.current,partnerBoundsRef,partnerPoseRef,()=>{
             if(!partnerMaskReadyRef.current){ partnerMaskReadyRef.current=true; setPartnerMaskReady(true) }
           },localTimestamp+1)
           trackerTimestampRef.current=localTimestamp+1
@@ -984,34 +1085,36 @@ function BoothScreen({ stream, remoteStream, themeId, layout, captureAt, onCaptu
         finally{ segmentBusyRef.current=false }
       }
       drawBoothFrame(
-        ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,proximity,
+        ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,propId,proximity,
         localMaskReadyRef.current?localMaskRef.current:null,
         partnerMaskReadyRef.current?partnerMaskRef.current:null,
         localBoundsRef.current,partnerBoundsRef.current,
+        localPoseRef.current,partnerPoseRef.current,
         localScratchRef.current,partnerScratchRef.current
       )
       rafRef.current=requestAnimationFrame(loop)
     }
     loop()
     return ()=>{ if(rafRef.current) cancelAnimationFrame(rafRef.current) }
-  },[themeId,proximity,remoteStream,updatePersonMask])
+  },[themeId,propId,proximity,remoteStream,updatePersonMask])
 
   const doCapture = useCallback(()=>{
     const video=vidRef.current, canvas=captureRef.current
     if(!video||!canvas) return
     const ctx=canvas.getContext("2d")!
     drawBoothFrame(
-      ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,proximity,
+      ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,propId,proximity,
       localMaskReadyRef.current?localMaskRef.current:null,
       partnerMaskReadyRef.current?partnerMaskRef.current:null,
       localBoundsRef.current,partnerBoundsRef.current,
+      localPoseRef.current,partnerPoseRef.current,
       localScratchRef.current,partnerScratchRef.current
     )
     const url=canvas.toDataURL("image/jpeg",0.93)
     setPhotos(prev=>[...prev,url])
     onPhotoCapture(url)
     setPoked(true); setTimeout(()=>setPoked(false),900)
-  },[themeId,proximity,onPhotoCapture])
+  },[themeId,propId,proximity,onPhotoCapture])
 
   useEffect(()=>{
     if(!captureAt||photos.length>=MAX) return
@@ -1433,6 +1536,7 @@ export default function App() {
   const [screen,  setScreen]  = useState<Screen>(initialRoom.length===6?"room":"landing")
   const [layout,  setLayout]  = useState<Layout>("classic")
   const [themeId, setThemeId] = useState<ThemeId>("classic")
+  const [propId,  setPropId]  = useState<PropId>("none")
   const [roomCode,setRoomCode]= useState(initialRoom||genCode)
   const [isHost,setIsHost]    = useState(!initialRoom)
   const [partnerJoined, setPartnerJoined] = useState(false)
@@ -1450,9 +1554,9 @@ export default function App() {
   const peerRef=useRef<Peer|null>(null)
   const dataRef=useRef<DataConnection|null>(null)
   const mediaRef=useRef<MediaConnection|null>(null)
-  const syncRef=useRef({screen,layout,themeId})
+  const syncRef=useRef({screen,layout,themeId,propId})
 
-  useEffect(()=>{ syncRef.current={screen,layout,themeId} },[screen,layout,themeId])
+  useEffect(()=>{ syncRef.current={screen,layout,themeId,propId} },[screen,layout,themeId,propId])
 
   const sendMessage=(message:SyncMessage)=>{
     if(dataRef.current?.open) dataRef.current.send(message)
@@ -1460,17 +1564,22 @@ export default function App() {
 
   const navigate=(next:Screen)=>{
     setScreen(next)
-    sendMessage({type:"STATE",screen:next,layout,themeId})
+    sendMessage({type:"STATE",screen:next,layout,themeId,propId})
   }
 
   const chooseLayout=(next:Layout)=>{
     setLayout(next)
-    sendMessage({type:"STATE",screen,layout:next,themeId})
+    sendMessage({type:"STATE",screen,layout:next,themeId,propId})
   }
 
   const chooseTheme=(next:ThemeId)=>{
     setThemeId(next)
-    sendMessage({type:"STATE",screen,layout,themeId:next})
+    sendMessage({type:"STATE",screen,layout,themeId:next,propId})
+  }
+
+  const chooseProp=(next:PropId)=>{
+    setPropId(next)
+    sendMessage({type:"STATE",screen,layout,themeId,propId:next})
   }
 
   // PeerJS provides signaling; media and state updates travel peer-to-peer.
@@ -1490,7 +1599,7 @@ export default function App() {
       connection.on("data",raw=>{
         const message=raw as SyncMessage
         if(message.type==="STATE"){
-          setScreen(message.screen); setLayout(message.layout); setThemeId(message.themeId)
+          setScreen(message.screen);setLayout(message.layout);setThemeId(message.themeId);setPropId(message.propId||"none")
         }
         if(message.type==="CAPTURE") setCaptureAt(message.at)
       })
@@ -1659,11 +1768,11 @@ export default function App() {
         {screen==="landing"  && <LandingScreen onStart={startSession}/>} 
         {screen==="room"     && <RoomScreen code={roomCode} partnerJoined={partnerJoined} copied={copied} onCopy={handleCopy} onContinue={()=>navigate("layout")}/>} 
         {screen==="layout"   && <LayoutScreen selected={layout} onSelect={chooseLayout} onContinue={()=>navigate("theme")}/>} 
-        {screen==="theme"    && <ThemeScreen selected={themeId} onSelect={chooseTheme} onContinue={()=>navigate("ready")}/>} 
+        {screen==="theme"    && <ThemeScreen selected={themeId} selectedProp={propId} onSelect={chooseTheme} onPropSelect={chooseProp} onContinue={()=>navigate("ready")}/>}
         {screen==="ready"    && <GetReadyScreen stream={stream} remoteStream={remoteStream} tipIndex={tipIdx} onContinue={()=>{ setPhotos([]); setSelected([]); navigate("booth") }}/>} 
         {screen==="booth"    && (
           <BoothScreen
-            stream={stream} remoteStream={remoteStream} themeId={themeId} layout={layout} captureAt={captureAt}
+            stream={stream} remoteStream={remoteStream} themeId={themeId} propId={propId} layout={layout} captureAt={captureAt}
             onCaptureRequest={requestCapture}
             onPhotoCapture={url=>setPhotos(p=>[...p,url])}
             onDone={()=>navigate("select")}
