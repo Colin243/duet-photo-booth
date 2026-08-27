@@ -144,10 +144,10 @@ const THEMES: {
 ]
 
 const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
-  {id:"none",name:"No prop",emoji:"○",tagline:"Keep it classic"},
-  {id:"glasses",name:"Funky Glasses",emoji:"😎",tagline:"Tinted and oversized"},
-  {id:"partyHat",name:"Party Hat",emoji:"🥳",tagline:"A little celebration"},
-  {id:"catEars",name:"Cat Ears",emoji:"🐱",tagline:"Soft and playful"},
+  {id:"none",name:"No filter",emoji:"○",tagline:"Keep it natural"},
+  {id:"glasses",name:"Pixel Hearts",emoji:"▦",tagline:"Y2K heart shades"},
+  {id:"partyHat",name:"Star Crown",emoji:"✦",tagline:"8-bit sparkle mode"},
+  {id:"catEars",name:"Retro Kitty",emoji:"♡",tagline:"Pixels, blush & ears"},
 ]
 
 const THEME_IMAGE_PATHS:Partial<Record<ThemeId,string>>={
@@ -457,52 +457,90 @@ function drawTrackedProp(
   const eyeDistance=Math.hypot(dx,dy)
   if(!Number.isFinite(eyeDistance)||eyeDistance<5) return
   const centerX=(left.x+right.x)/2,centerY=(left.y+right.y)/2
-  const angle=Math.atan2(dy,dx)
+  // Pose landmarks may arrive with the eye vector pointing right-to-left.
+  // Normalize it to an upright half-turn so crowns and ears never flip below
+  // the face while still following natural head tilt.
+  let angle=Math.atan2(dy,dx)
+  if(angle>Math.PI/2) angle-=Math.PI
+  if(angle<-Math.PI/2) angle+=Math.PI
 
   ctx.save();ctx.translate(centerX,centerY);ctx.rotate(angle)
-  ctx.lineJoin="round";ctx.lineCap="round"
+  ctx.imageSmoothingEnabled=false
+  ctx.lineJoin="miter";ctx.lineCap="square"
+  const px=Math.max(2,Math.round(eyeDistance*.075))
+  const block=(x:number,y:number,w:number,h:number,color:string)=>{
+    ctx.fillStyle=color
+    ctx.fillRect(Math.round(x/px)*px,Math.round(y/px)*px,Math.max(px,Math.round(w/px)*px),Math.max(px,Math.round(h/px)*px))
+  }
+  const pixelHeart=(x:number,y:number,size:number,color:string,outline="#3b2444")=>{
+    const u=Math.max(2,Math.round(size/7))
+    const rows=["0110110","1111111","1111111","0111110","0011100","0001000"]
+    rows.forEach((row,ry)=>[...row].forEach((cell,rx)=>{
+      if(cell==="1") block(x+(rx-3.5)*u,y+(ry-2.5)*u,u,u,outline)
+    }))
+    const inner=["0100010","0110110","0011100"]
+    inner.forEach((row,ry)=>[...row].forEach((cell,rx)=>{
+      if(cell==="1") block(x+(rx-3.5)*u,y+(ry-1.4)*u,u,u,color)
+    }))
+  }
+  const pixelStar=(x:number,y:number,size:number,color:string,outline="#40314f")=>{
+    const u=Math.max(2,Math.round(size/7))
+    const rows=["0001000","0101010","0011100","1111111","0011100","0101010","0001000"]
+    rows.forEach((row,ry)=>[...row].forEach((cell,rx)=>{
+      if(cell==="1") block(x+(rx-3.5)*u,y+(ry-3.5)*u,u,u,outline)
+    }))
+    block(x-u*.5,y-u*.5,u,u,color)
+    block(x-u*1.5,y-u*.5,u,u,color)
+    block(x+u*.5,y-u*.5,u,u,color)
+    block(x-u*.5,y-u*1.5,u,u,"#fff8d7")
+  }
   if(propId==="glasses"){
-    const lensW=eyeDistance*.92,lensH=eyeDistance*.62,gap=eyeDistance*.08
-    ctx.shadowColor="rgba(30,14,38,.3)";ctx.shadowBlur=8;ctx.shadowOffsetY=3
+    const lensW=eyeDistance*.88,lensH=eyeDistance*.58,lensY=-lensH*.3
     ;[-1,1].forEach(side=>{
-      const x=side*(lensW/2+gap/2)-lensW/2
-      ctx.beginPath();rRect(ctx,x,-lensH*.43,lensW,lensH,lensH*.28)
-      ctx.fillStyle="rgba(166,89,198,.38)";ctx.fill()
-      ctx.strokeStyle="#35213d";ctx.lineWidth=Math.max(3,eyeDistance*.1);ctx.stroke()
-      ctx.strokeStyle="rgba(255,255,255,.7)";ctx.lineWidth=Math.max(1,eyeDistance*.025)
-      ctx.beginPath();ctx.moveTo(x+lensW*.18,-lensH*.25);ctx.lineTo(x+lensW*.48,-lensH*.34);ctx.stroke()
+      const cx=side*eyeDistance*.53
+      block(cx-lensW*.58,lensY-lensH*.52,lensW*1.16,lensH*1.04,"#3b2444")
+      block(cx-lensW*.48,lensY-lensH*.4,lensW*.96,lensH*.8,"#ff7fb9")
+      block(cx-lensW*.36,lensY-lensH*.29,lensW*.72,lensH*.58,"rgba(105,226,238,.72)")
+      block(cx-lensW*.25,lensY-lensH*.2,lensW*.2,px,"#fff")
+      block(cx-lensW*.38,lensY-lensH*.07,px,lensH*.22,"rgba(255,255,255,.82)")
+      pixelHeart(cx+side*lensW*.46,lensY-lensH*.5,eyeDistance*.38,"#ffb2d4")
     })
-    ctx.shadowColor="transparent";ctx.strokeStyle="#35213d";ctx.lineWidth=Math.max(3,eyeDistance*.09)
-    ctx.beginPath();ctx.moveTo(-gap/2,-lensH*.05);ctx.lineTo(gap/2,-lensH*.05);ctx.stroke()
-    ctx.beginPath();ctx.moveTo(-lensW-gap/2,-lensH*.08);ctx.lineTo(-lensW-eyeDistance*.35,-lensH*.2);ctx.stroke()
-    ctx.beginPath();ctx.moveTo(lensW+gap/2,-lensH*.08);ctx.lineTo(lensW+eyeDistance*.35,-lensH*.2);ctx.stroke()
+    block(-eyeDistance*.12,lensY-px*.5,eyeDistance*.24,px*1.6,"#3b2444")
+    block(-eyeDistance*1.18,lensY-px*.5,eyeDistance*.28,px*1.4,"#3b2444")
+    block(eyeDistance*.9,lensY-px*.5,eyeDistance*.28,px*1.4,"#3b2444")
+    pixelStar(eyeDistance*1.38,-eyeDistance*.62,eyeDistance*.34,"#86ecff","#fff")
   }
   if(propId==="partyHat"){
-    const baseY=-eyeDistance*.7,half=eyeDistance*.82,tipY=-eyeDistance*2.65
-    const cone=ctx.createLinearGradient(-half,baseY,half,tipY)
-    cone.addColorStop(0,"#ffcb4c");cone.addColorStop(.5,"#ef6b9d");cone.addColorStop(1,"#8d6bd1")
-    ctx.shadowColor="rgba(30,14,38,.28)";ctx.shadowBlur=10;ctx.shadowOffsetY=4
-    ctx.beginPath();ctx.moveTo(-half,baseY);ctx.lineTo(half,baseY);ctx.lineTo(eyeDistance*.12,tipY);ctx.closePath();ctx.fillStyle=cone;ctx.fill()
-    ctx.strokeStyle="rgba(255,255,255,.9)";ctx.lineWidth=Math.max(2,eyeDistance*.06)
-    for(let i=-2;i<=2;i++){
-      const x=i*half*.32,y=baseY-(2-Math.abs(i))*(tipY-baseY)*-.18
-      ctx.beginPath();ctx.arc(x,y,eyeDistance*.08,0,Math.PI*2);ctx.stroke()
-    }
-    ctx.shadowColor="transparent";ctx.fillStyle="#fff4bd";ctx.beginPath();ctx.arc(eyeDistance*.12,tipY,eyeDistance*.2,0,Math.PI*2);ctx.fill()
-    ctx.strokeStyle="#ef6b9d";ctx.lineWidth=Math.max(3,eyeDistance*.1);ctx.beginPath();ctx.moveTo(-half*1.05,baseY);ctx.lineTo(half*1.05,baseY);ctx.stroke()
+    const bandY=-eyeDistance*.8
+    block(-eyeDistance*.96,bandY,eyeDistance*1.92,px*1.7,"#463052")
+    block(-eyeDistance*.86,bandY-px*.12,eyeDistance*1.72,px,"#f18fc1")
+    pixelStar(-eyeDistance*.72,-eyeDistance*1.12,eyeDistance*.62,"#ff8cc4")
+    pixelStar(0,-eyeDistance*1.48,eyeDistance*.84,"#89eafa")
+    pixelStar(eyeDistance*.72,-eyeDistance*1.12,eyeDistance*.62,"#ffe271")
+    block(-eyeDistance*.48,-eyeDistance*1.78,px,px,"#fff")
+    block(eyeDistance*.55,-eyeDistance*1.72,px,px,"#fff")
+    block(-eyeDistance*1.18,-eyeDistance*1.35,px*2,px*.8,"#91edff")
+    block(-eyeDistance*1.18-px*.6,-eyeDistance*1.35-px*.6,px*.8,px*2,"#91edff")
   }
   if(propId==="catEars"){
-    const y=-eyeDistance*.68,outer=eyeDistance*1.1,earW=eyeDistance*.72,earH=eyeDistance*1.25
-    ctx.shadowColor="rgba(30,14,38,.25)";ctx.shadowBlur=9;ctx.shadowOffsetY=3
+    const y=-eyeDistance*.72
+    block(-eyeDistance*.92,y,eyeDistance*1.84,px*1.6,"#49324f")
     ;[-1,1].forEach(side=>{
-      const cx=side*outer*.52
-      ctx.beginPath();ctx.moveTo(cx-earW/2,y);ctx.lineTo(cx+earW/2,y);ctx.lineTo(cx+side*earW*.18,y-earH);ctx.closePath()
-      ctx.fillStyle="#50364f";ctx.fill();ctx.strokeStyle="#fff";ctx.lineWidth=Math.max(2,eyeDistance*.05);ctx.stroke()
-      ctx.beginPath();ctx.moveTo(cx-earW*.25,y-eyeDistance*.12);ctx.lineTo(cx+earW*.25,y-eyeDistance*.12);ctx.lineTo(cx+side*earW*.14,y-earH*.72);ctx.closePath()
-      ctx.fillStyle="#ef9eb7";ctx.fill()
+      const cx=side*eyeDistance*.62
+      const earW=eyeDistance*.7,earH=eyeDistance*.9
+      ctx.fillStyle="#49324f"
+      ctx.beginPath();ctx.moveTo(cx-earW/2,y);ctx.lineTo(cx+earW/2,y);ctx.lineTo(cx+side*earW*.2,y-earH);ctx.closePath();ctx.fill()
+      ctx.fillStyle="#ff9fc7"
+      ctx.beginPath();ctx.moveTo(cx-earW*.2,y-px);ctx.lineTo(cx+earW*.2,y-px);ctx.lineTo(cx+side*earW*.16,y-earH*.66);ctx.closePath();ctx.fill()
+      block(side*eyeDistance*.78,eyeDistance*.37,eyeDistance*.34,px*1.3,"rgba(255,125,176,.78)")
+      block(side*eyeDistance*.92,eyeDistance*.31,px,px,"#fff")
     })
-    ctx.shadowColor="transparent";ctx.strokeStyle="#50364f";ctx.lineWidth=Math.max(4,eyeDistance*.11)
-    ctx.beginPath();ctx.arc(0,y+eyeDistance*.18,outer*.72,Math.PI*1.08,Math.PI*1.92);ctx.stroke()
+    block(-px*.55,eyeDistance*.42,px*1.1,px*.8,"#ff75ad")
+    block(-eyeDistance*1.23,eyeDistance*.38,eyeDistance*.52,px*.55,"#fff")
+    block(-eyeDistance*1.2,eyeDistance*.55,eyeDistance*.5,px*.55,"#fff")
+    block(eyeDistance*.71,eyeDistance*.38,eyeDistance*.52,px*.55,"#fff")
+    block(eyeDistance*.7,eyeDistance*.55,eyeDistance*.5,px*.55,"#fff")
+    pixelHeart(eyeDistance*1.3,-eyeDistance*.78,eyeDistance*.34,"#ff9fc7","#fff")
   }
   ctx.restore()
 }
@@ -851,7 +889,7 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
       <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:680, textAlign:"center" }}>
         <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  2 / 3</p>
         <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Choose your scene</h2>
-        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Choose a shared background, then add an optional face-tracked prop for both of you.</p>
+        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Choose a shared background, then add an optional face-tracked retro filter for both of you.</p>
 
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(156px,1fr))", gap:12, marginBottom:24 }}>
           {THEMES.map(t=>(
@@ -864,18 +902,18 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
           ))}
         </div>
 
-        <div style={{ background:"rgba(255,255,255,.72)",border:"1px solid rgba(200,91,130,.12)",borderRadius:20,padding:"18px",marginBottom:28 }}>
-          <p style={{ fontSize:11,letterSpacing:".16em",color:"#C85B82",fontWeight:800,marginBottom:12 }}>SHARED CAMERA PROP</p>
+        <div style={{ backgroundColor:"rgba(255,255,255,.82)",backgroundImage:"linear-gradient(90deg,rgba(200,91,130,.045) 1px,transparent 1px),linear-gradient(rgba(200,91,130,.045) 1px,transparent 1px)",backgroundSize:"10px 10px",border:"2px solid #3B2444",borderRadius:8,padding:"18px",marginBottom:28,boxShadow:"6px 6px 0 rgba(200,91,130,.18)" }}>
+          <p style={{ fontFamily:"ui-monospace,SFMono-Regular,monospace",fontSize:11,letterSpacing:".14em",color:"#C85B82",fontWeight:900,marginBottom:12 }}>SHARED RETRO FILTER · PX</p>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(118px,1fr))",gap:9 }}>
             {PROPS.map(prop=>(
-              <button key={prop.id} onClick={()=>onPropSelect(prop.id)} style={{ borderRadius:14,padding:"12px 6px",border:`2px solid ${selectedProp===prop.id?"#C85B82":"transparent"}`,background:selectedProp===prop.id?"#fff":"rgba(255,255,255,.58)",boxShadow:selectedProp===prop.id?"0 5px 18px rgba(200,91,130,.18)":"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all .2s" }}>
-                <span style={{ fontSize:23 }}>{prop.emoji}</span>
-                <span style={{ fontSize:11,fontWeight:800,color:"#2D1B2E" }}>{prop.name}</span>
+              <button key={prop.id} onClick={()=>onPropSelect(prop.id)} style={{ borderRadius:4,padding:"12px 6px",border:`2px solid ${selectedProp===prop.id?"#C85B82":"#D8C7D2"}`,background:selectedProp===prop.id?"#fff":"rgba(255,255,255,.62)",boxShadow:selectedProp===prop.id?"3px 3px 0 #3B2444":"2px 2px 0 rgba(59,36,68,.18)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all .16s",transform:selectedProp===prop.id?"translate(-1px,-1px)":"none" }}>
+                <span style={{ fontFamily:"ui-monospace,SFMono-Regular,monospace",fontSize:23,lineHeight:1,color:selectedProp===prop.id?"#C85B82":"#6C536A",textShadow:selectedProp===prop.id?"2px 2px 0 #9DECF3":"none" }}>{prop.emoji}</span>
+                <span style={{ fontFamily:"ui-monospace,SFMono-Regular,monospace",fontSize:10,fontWeight:900,color:"#2D1B2E",textTransform:"uppercase" }}>{prop.name}</span>
                 <span style={{ fontSize:9,color:"#9B7B90",lineHeight:1.3 }}>{prop.tagline}</span>
               </button>
             ))}
           </div>
-          <p style={{ fontSize:10,color:"#B39AAA",marginTop:10 }}>The same selection follows both faces and stays synchronized across the room.</p>
+          <p style={{ fontSize:10,color:"#8F7287",marginTop:12 }}>Low-resolution edges are intentional. The same filter follows both faces and stays synchronized across the room.</p>
         </div>
 
         <button onClick={onContinue} style={{ width:"100%", padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}>
@@ -984,6 +1022,7 @@ function BoothScreen({ stream, remoteStream, themeId,propId,layout,captureAt,onC
   const lastSegmentRef=useRef(0)
   const trackerTimestampRef=useRef(0)
   const segmentBusyRef=useRef(false)
+  const segmentPartnerNextRef=useRef(false)
   const rafRef      = useRef<number>()
   const timerRef    = useRef<ReturnType<typeof setInterval>>()
   const [photos, setPhotos]     = useState<string[]>([])
@@ -1101,14 +1140,22 @@ function BoothScreen({ stream, remoteStream, themeId,propId,layout,captureAt,onC
         segmentBusyRef.current=true
         try{
           const localTimestamp=Math.max(Math.floor(now),trackerTimestampRef.current+2)
-          updatePersonMask(video,localMaskRef.current,localSupportRef.current,localBoundsRef,localPoseRef,()=>{
-            if(!localMaskReadyRef.current){ localMaskReadyRef.current=true; setLocalMaskReady(true) }
-          },localTimestamp)
           const partner=partnerRef.current
-          if(partner&&remoteStream) updatePersonMask(partner,partnerMaskRef.current,partnerSupportRef.current,partnerBoundsRef,partnerPoseRef,()=>{
-            if(!partnerMaskReadyRef.current){ partnerMaskReadyRef.current=true; setPartnerMaskReady(true) }
-          },localTimestamp+1)
-          trackerTimestampRef.current=localTimestamp+1
+          // A single MediaPipe video tracker should not be fed two sources in
+          // the same frame. Alternate local and remote inference so callbacks,
+          // masks, and facial landmarks stay associated with the right person.
+          const processPartner=Boolean(partner&&remoteStream&&segmentPartnerNextRef.current)
+          if(processPartner&&partner){
+            updatePersonMask(partner,partnerMaskRef.current,partnerSupportRef.current,partnerBoundsRef,partnerPoseRef,()=>{
+              if(!partnerMaskReadyRef.current){ partnerMaskReadyRef.current=true; setPartnerMaskReady(true) }
+            },localTimestamp)
+          }else{
+            updatePersonMask(video,localMaskRef.current,localSupportRef.current,localBoundsRef,localPoseRef,()=>{
+              if(!localMaskReadyRef.current){ localMaskReadyRef.current=true; setLocalMaskReady(true) }
+            },localTimestamp)
+          }
+          segmentPartnerNextRef.current=Boolean(partner&&remoteStream)&&!segmentPartnerNextRef.current
+          trackerTimestampRef.current=localTimestamp
           lastSegmentRef.current=now
         }catch(error){ console.warn("Person mask frame skipped",error) }
         finally{ segmentBusyRef.current=false }

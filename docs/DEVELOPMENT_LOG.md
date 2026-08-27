@@ -44,16 +44,23 @@ the booth rectangle.
 
 ### Shared face-tracked props
 
-Classic Plain remains the original no-frills booth. A separate optional prop
-choice adds Funky Glasses, Party Hat, or Cat Ears without replacing that scene.
-The prop choice is part of the synchronized room state, so either participant's
-selection updates both browsers and the same prop appears on both people.
+Classic Plain remains the original no-frills booth. The optional prop layer now
+uses a deliberately low-resolution, early-digital sticker language inspired by
+contemporary Chinese social-camera aesthetics: Pixel Hearts, an 8-bit Star
+Crown, and Retro Kitty ears with square blush and whiskers. The shapes are
+original canvas drawings rather than copied platform assets or logos.
+
+The filter choice is part of the synchronized room state, so either
+participant's selection updates both browsers and the same treatment appears on
+both people.
 
 The first prop pass reuses Pose Landmarker eye points instead of loading a third
 computer-vision model. Eye spacing controls scale, the line between the eyes
 controls rotation, and each person's crop transform maps the prop into the final
-composite. Props are therefore rendered into both the live preview and captured
-photo while adding very little work to the existing tracking loop.
+composite. Pixel blocks are scaled from eye distance and intentionally rendered
+without smoothing, preserving their hard retro edges as either person moves.
+Filters appear in both the live preview and captured photo while adding very
+little work to the existing tracking loop.
 
 ### Theme reduction and realism pass
 
