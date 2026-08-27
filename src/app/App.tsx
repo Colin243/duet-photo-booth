@@ -110,7 +110,7 @@ const GLOBAL_CSS = `
 
 type Screen = "landing"|"room"|"layout"|"theme"|"ready"|"booth"|"select"|"customize"|"reveal"
 type Layout  = "classic"|"wide"
-type ThemeId = "classic"|"washer"|"elevator"|"airplane"|"kitchen"|"cctv"|"arcade"
+type ThemeId = "classic"|"washer"|"elevator"|"cctv"
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
 
 type SyncMessage =
@@ -138,12 +138,9 @@ const THEMES: {
   previewBg:string; dark:boolean; accent:string
 }[] = [
   { id:"classic",  name:"Classic",         emoji:"✦", tagline:"Soft daylight booth",      previewBg:"linear-gradient(160deg,#ffffff,#dceeff)",          dark:false, accent:"#C85B82" },
-  { id:"washer",   name:"Washing Machine", emoji:"◎", tagline:"Inside the drum",          previewBg:"linear-gradient(160deg,#e3f2fd,#bbdefb)",          dark:false, accent:"#1976D2" },
-  { id:"elevator", name:"Elevator",        emoji:"↕", tagline:"Mirrored walls, going up",previewBg:"linear-gradient(180deg,#c8c8c8,#f0f0f0 50%,#c8c8c8)",dark:false,accent:"#546E7A"},
-  { id:"airplane", name:"Airplane",        emoji:"✈️", tagline:"Up in the clouds",        previewBg:"linear-gradient(160deg,#81d4fa,#e1f5fe 65%,#fff)",  dark:false, accent:"#0288D1" },
-  { id:"kitchen",  name:"Kitchen",         emoji:"◫", tagline:"Morning light, together", previewBg:"linear-gradient(160deg,#fff8e1,#ffecb3)",          dark:false, accent:"#E65100" },
-  { id:"cctv",     name:"CCTV",            emoji:"REC", tagline:"Secret surveillance",     previewBg:"#0a0a0a",                                          dark:true,  accent:"#00ff41" },
-  { id:"arcade",   name:"Arcade",          emoji:"★", tagline:"Neon lights, high score", previewBg:"linear-gradient(160deg,#0d0221,#1a0533)",          dark:true,  accent:"#e040fb" },
+  { id:"washer",   name:"Laundromat",      emoji:"◎", tagline:"Retro wash & pose",        previewBg:"linear-gradient(160deg,#dce7e7,#f4efe4)",          dark:false, accent:"#3B7D7A" },
+  { id:"elevator", name:"Elevator",        emoji:"↕", tagline:"Brushed steel, going up", previewBg:"linear-gradient(90deg,#7d8588,#d9dddc 50%,#7d8588)",dark:false,accent:"#455A64"},
+  { id:"cctv",     name:"CCTV",            emoji:"REC", tagline:"Caught on camera",        previewBg:"linear-gradient(160deg,#171b1c,#28302e)",          dark:true,  accent:"#B7C5BC" },
 ]
 
 const FILTERS: { id:FilterId; name:string; css:string }[] = [
@@ -216,12 +213,9 @@ function mkLinear(ctx:CanvasRenderingContext2D, x0:number,y0:number,x1:number,y1
 function drawThemeBg(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:number) {
   switch(id) {
     case "classic":  ctx.fillStyle = mkLinear(ctx,0,0,W,H,[[0,"#ffffff"],[0.5,"#edf7ff"],[1,"#dceeff"]]); break
-    case "washer":   ctx.fillStyle = mkLinear(ctx,0,0,W,H,[[0,"#e3f2fd"],[1,"#bbdefb"]]); break
-    case "elevator": ctx.fillStyle = mkLinear(ctx,0,0,0,H,[[0,"#b8b8b8"],[0.35,"#eeeeee"],[0.65,"#eeeeee"],[1,"#b8b8b8"]]); break
-    case "airplane": ctx.fillStyle = mkLinear(ctx,0,0,0,H,[[0,"#81d4fa"],[0.6,"#e1f5fe"],[1,"#ffffff"]]); break
-    case "kitchen":  ctx.fillStyle = mkLinear(ctx,0,0,W,H,[[0,"#fff8e1"],[1,"#ffecb3"]]); break
-    case "cctv":     ctx.fillStyle = "#0a0a0a"; break
-    case "arcade":   ctx.fillStyle = mkLinear(ctx,0,0,0,H,[[0,"#0d0221"],[1,"#1a0533"]]); break
+    case "washer":   ctx.fillStyle = mkLinear(ctx,0,0,W,H,[[0,"#dce7e7"],[0.55,"#f4f1e9"],[1,"#d5dcda"]]); break
+    case "elevator": ctx.fillStyle = mkLinear(ctx,0,0,W,0,[[0,"#747d80"],[0.18,"#c7cdcd"],[0.5,"#eef0ef"],[0.82,"#c4caca"],[1,"#747d80"]]); break
+    case "cctv":     ctx.fillStyle = mkLinear(ctx,0,0,0,H,[[0,"#252b2b"],[1,"#101414"]]); break
   }
   ctx.fillRect(0,0,W,H)
 }
@@ -242,102 +236,100 @@ function drawThemeDetails(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:
       break
     }
     case "elevator": {
-      // Ceiling lamp
-      const lg = ctx.createLinearGradient(0,0,0,H*0.14)
-      lg.addColorStop(0,"rgba(255,255,240,0.85)"); lg.addColorStop(1,"rgba(255,255,240,0)")
-      ctx.fillStyle=lg; ctx.fillRect(W*0.28,0,W*0.44,H*0.14)
-      // Mirror seam lines
-      ctx.strokeStyle="rgba(160,160,160,0.35)"; ctx.lineWidth=1
-      ;[0.25,0.5,0.75].forEach(x=>{ ctx.beginPath(); ctx.moveTo(W*x,0); ctx.lineTo(W*x,H); ctx.stroke() })
-      // Floor sheen
-      const fg2 = ctx.createLinearGradient(0,H*0.78,0,H)
-      fg2.addColorStop(0,"rgba(160,160,160,0)"); fg2.addColorStop(1,"rgba(140,140,140,0.28)")
-      ctx.fillStyle=fg2; ctx.fillRect(0,H*0.78,W,H*0.22)
-      break
-    }
-    case "airplane": {
-      // Clouds
-      const clouds:number[][] = [[W*.06,H*.18,55],[W*.62,H*.09,70],[W*.38,H*.28,45],[W*.82,H*.38,62]]
-      clouds.forEach(([cx,cy,r])=>{
-        ctx.fillStyle="rgba(255,255,255,0.52)"
-        ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2)
-        ctx.arc(cx+r*.7,cy-r*.28,r*.68,0,Math.PI*2)
-        ctx.arc(cx+r*1.35,cy,r*.82,0,Math.PI*2)
-        ctx.fill()
+      // Brushed metal wall panels and the dark seam of a real elevator door.
+      ctx.strokeStyle="rgba(50,58,60,.34)"; ctx.lineWidth=2
+      ;[.18,.5,.82].forEach(x=>{ctx.beginPath();ctx.moveTo(W*x,0);ctx.lineTo(W*x,H);ctx.stroke()})
+      ctx.fillStyle="rgba(35,42,44,.16)"; ctx.fillRect(W*.495,0,W*.01,H)
+
+      // Recessed fluorescent ceiling light.
+      const ceiling=ctx.createLinearGradient(0,0,0,H*.16)
+      ceiling.addColorStop(0,"rgba(255,255,244,.98)")
+      ceiling.addColorStop(1,"rgba(255,255,244,0)")
+      ctx.fillStyle=ceiling; ctx.fillRect(W*.24,0,W*.52,H*.16)
+
+      // Floor indicator and call direction.
+      ctx.fillStyle="rgba(17,21,22,.9)"; ctx.beginPath();rRect(ctx,W*.445,H*.025,W*.11,H*.085,6);ctx.fill()
+      ctx.fillStyle="#ef6c57";ctx.font="700 16px monospace";ctx.textAlign="center";ctx.fillText("▲ 12",W*.5,H*.082)
+
+      // Stainless handrail and wall mounts sit behind the people.
+      ctx.strokeStyle="rgba(45,53,55,.48)";ctx.lineWidth=9;ctx.lineCap="round"
+      ctx.beginPath();ctx.moveTo(W*.08,H*.72);ctx.lineTo(W*.92,H*.72);ctx.stroke()
+      ctx.strokeStyle="rgba(242,246,245,.7)";ctx.lineWidth=3
+      ctx.beginPath();ctx.moveTo(W*.08,H*.705);ctx.lineTo(W*.92,H*.705);ctx.stroke()
+
+      // Button panel on the right wall.
+      ctx.fillStyle="rgba(44,51,53,.76)";ctx.beginPath();rRect(ctx,W*.89,H*.18,W*.075,H*.34,8);ctx.fill()
+      ;[0,1,2,3].forEach(index=>{
+        const cy=H*(.225+index*.07)
+        ctx.beginPath();ctx.arc(W*.927,cy,7,0,Math.PI*2)
+        ctx.fillStyle=index===1?"#ef8a73":"#d7dddc";ctx.fill()
+        ctx.strokeStyle="rgba(0,0,0,.35)";ctx.lineWidth=1;ctx.stroke()
       })
-      // Porthole frame
-      ctx.save()
-      const pw=W*.74, ph=H*.86, px=W*.13, py=H*.07
-      ctx.beginPath(); rRect(ctx,px,py,pw,ph,pw*.5)
-      ctx.strokeStyle="rgba(144,202,249,0.55)"; ctx.lineWidth=18; ctx.stroke()
-      ctx.strokeStyle="rgba(255,255,255,0.28)"; ctx.lineWidth=4
-      ctx.beginPath(); rRect(ctx,px+10,py+10,pw-20,ph-20,pw*.5)
-      ctx.stroke(); ctx.restore()
+
+      // Diamond-plate inspired floor sheen.
+      const floor=ctx.createLinearGradient(0,H*.78,0,H)
+      floor.addColorStop(0,"rgba(60,68,70,.08)");floor.addColorStop(1,"rgba(36,43,45,.48)")
+      ctx.fillStyle=floor;ctx.fillRect(0,H*.78,W,H*.22)
+      ctx.strokeStyle="rgba(235,240,239,.13)";ctx.lineWidth=1
+      for(let x=-W;x<W*2;x+=26){ctx.beginPath();ctx.moveTo(x,H);ctx.lineTo(x+W*.18,H*.78);ctx.stroke()}
       break
     }
     case "washer": {
-      // Porthole ring
-      ctx.save()
-      const r = Math.min(W,H)*.44
-      ctx.beginPath(); ctx.arc(W/2,H/2,r,0,Math.PI*2)
-      ctx.strokeStyle="rgba(100,181,246,0.6)"; ctx.lineWidth=22; ctx.stroke()
-      ctx.beginPath(); ctx.arc(W/2,H/2,r+14,0,Math.PI*2)
-      ctx.strokeStyle="rgba(187,222,251,0.3)"; ctx.lineWidth=8; ctx.stroke()
-      ctx.restore()
-      // Soap bubbles
-      ;([[W*.08,H*.19,13],[W*.87,H*.34,19],[W*.76,H*.13,9],[W*.18,H*.82,15],[W*.92,H*.68,11]] as number[][]).forEach(([bx,by,br])=>{
-        ctx.beginPath(); ctx.arc(bx,by,br,0,Math.PI*2)
-        ctx.strokeStyle="rgba(144,202,249,0.52)"; ctx.lineWidth=1.5; ctx.stroke()
-        ctx.fillStyle="rgba(255,255,255,0.10)"; ctx.fill()
-      })
-      break
-    }
-    case "kitchen": {
-      // Warm top light
-      const sg = ctx.createRadialGradient(W/2,0,0,W/2,0,H*.6)
-      sg.addColorStop(0,"rgba(255,230,160,0.38)"); sg.addColorStop(1,"rgba(255,230,160,0)")
-      ctx.fillStyle=sg; ctx.fillRect(0,0,W,H)
-      // Tile grid
-      ctx.strokeStyle="rgba(255,213,79,0.18)"; ctx.lineWidth=1
-      for(let x=0;x<W;x+=42){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H*.18); ctx.stroke() }
-      for(let y=0;y<H*.18;y+=42){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke() }
+      // Grout lines and cool enamel recreate a compact retro laundromat.
+      ctx.strokeStyle="rgba(78,112,112,.15)";ctx.lineWidth=1
+      for(let x=0;x<W;x+=38){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H*.72);ctx.stroke()}
+      for(let y=0;y<H*.72;y+=38){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+
+      ctx.fillStyle="rgba(34,78,76,.88)";ctx.beginPath();rRect(ctx,W*.32,H*.035,W*.36,H*.09,8);ctx.fill()
+      ctx.fillStyle="#f5f1e7";ctx.font="700 13px Nunito, sans-serif";ctx.textAlign="center"
+      ctx.fillText("SELF SERVICE · WASH & POSE",W*.5,H*.09)
+
+      const drawWasher=(x:number,y:number,w:number,h:number)=>{
+        ctx.fillStyle="rgba(245,243,235,.96)";ctx.beginPath();rRect(ctx,x,y,w,h,12);ctx.fill()
+        ctx.strokeStyle="rgba(64,84,84,.22)";ctx.lineWidth=2;ctx.stroke()
+        ctx.fillStyle="#d5d9d5";ctx.fillRect(x,y+h*.08,w,h*.19)
+        ctx.fillStyle="#343b3b";ctx.beginPath();rRect(ctx,x+w*.12,y+h*.125,w*.28,h*.065,3);ctx.fill()
+        ;[.62,.77,.9].forEach(cx=>{ctx.beginPath();ctx.arc(x+w*cx,y+h*.17,4,0,Math.PI*2);ctx.fillStyle="#62706e";ctx.fill()})
+        const doorX=x+w*.5,doorY=y+h*.61,doorR=Math.min(w,h)*.31
+        ctx.beginPath();ctx.arc(doorX,doorY,doorR,0,Math.PI*2);ctx.fillStyle="#9aa4a3";ctx.fill()
+        ctx.beginPath();ctx.arc(doorX,doorY,doorR*.76,0,Math.PI*2)
+        const glass=ctx.createRadialGradient(doorX-doorR*.25,doorY-doorR*.3,2,doorX,doorY,doorR)
+        glass.addColorStop(0,"#8ab1b5");glass.addColorStop(.55,"#33494d");glass.addColorStop(1,"#172326")
+        ctx.fillStyle=glass;ctx.fill()
+        ctx.strokeStyle="rgba(255,255,255,.42)";ctx.lineWidth=3;ctx.beginPath();ctx.arc(doorX,doorY,doorR*.62,Math.PI*1.05,Math.PI*1.65);ctx.stroke()
+      }
+      drawWasher(-W*.055,H*.27,W*.31,H*.62)
+      drawWasher(W*.745,H*.27,W*.31,H*.62)
+
+      const floor=ctx.createLinearGradient(0,H*.72,0,H)
+      floor.addColorStop(0,"rgba(79,101,99,.08)");floor.addColorStop(1,"rgba(79,101,99,.28)")
+      ctx.fillStyle=floor;ctx.fillRect(0,H*.72,W,H*.28)
+      ctx.strokeStyle="rgba(45,73,71,.16)"
+      for(let x=-W;x<W*2;x+=46){ctx.beginPath();ctx.moveTo(x,H);ctx.lineTo(x+W*.12,H*.72);ctx.stroke()}
       break
     }
     case "cctv": {
-      ctx.fillStyle="rgba(0,55,0,0.22)"; ctx.fillRect(0,0,W,H)
-      ctx.fillStyle="rgba(0,18,0,0.24)"
-      for(let y=0;y<H;y+=4) ctx.fillRect(0,y,W,2)
-      // Timestamp bar
-      ctx.fillStyle="rgba(0,0,0,0.78)"; ctx.fillRect(0,H-40,W,40)
-      ctx.fillStyle="#00ff41"; ctx.font="bold 12px monospace"; ctx.textAlign="left"
-      ctx.fillText(`REC ● ${new Date().toLocaleString("en-US")}  CAM-02`,10,H-14)
-      ctx.textAlign="right"; ctx.fillStyle="rgba(0,255,65,0.6)"; ctx.font="11px monospace"
-      ctx.fillText("♦ SECURE FEED",W-10,22)
-      // REC dot
-      ctx.fillStyle="#ff2222"
-      ctx.beginPath(); ctx.arc(W-22,18,7,0,Math.PI*2); ctx.fill()
-      break
-    }
-    case "arcade": {
-      ctx.save()
-      ctx.strokeStyle="#e040fb"; ctx.lineWidth=5
-      ctx.shadowColor="#e040fb"; ctx.shadowBlur=28
-      ctx.strokeRect(3,3,W-6,H-6)
-      ctx.strokeStyle="#7c4dff"; ctx.lineWidth=2; ctx.shadowBlur=14
-      ctx.strokeRect(10,10,W-20,H-20)
-      ctx.restore()
-      // Scanlines
-      ctx.fillStyle="rgba(0,0,0,0.11)"
-      for(let y=0;y<H;y+=3) ctx.fillRect(0,y,W,1)
-      // Player tags
-      ctx.save()
-      ctx.fillStyle="#e040fb"; ctx.font="bold 13px monospace"
-      ctx.shadowColor="#e040fb"; ctx.shadowBlur=10
-      ctx.textAlign="left"; ctx.fillText("1P",18,32)
-      ctx.textAlign="right"; ctx.fillText("2P",W-18,32)
-      ctx.fillStyle="#b388ff"; ctx.font="11px monospace"; ctx.shadowBlur=6
-      ctx.textAlign="center"; ctx.fillText("★ HIGH SCORE ★",W/2,30)
-      ctx.restore()
+      // Neutral monitor tint and subtle interlacing, based on real security feeds.
+      ctx.fillStyle="rgba(26,39,36,.22)";ctx.fillRect(0,0,W,H)
+      ctx.fillStyle="rgba(0,0,0,.075)"
+      for(let y=0;y<H;y+=4)ctx.fillRect(0,y,W,1)
+
+      ctx.strokeStyle="rgba(210,224,216,.55)";ctx.lineWidth=2
+      const corner=24,pad=16
+      ;[[pad,pad,1,1],[W-pad,pad,-1,1],[pad,H-pad,1,-1],[W-pad,H-pad,-1,-1]].forEach(([x,y,dx,dy])=>{
+        ctx.beginPath();ctx.moveTo(x+dx*corner,y);ctx.lineTo(x,y);ctx.lineTo(x,y+dy*corner);ctx.stroke()
+      })
+
+      ctx.fillStyle="rgba(3,6,6,.72)";ctx.fillRect(0,H-38,W,38)
+      ctx.font="700 12px monospace";ctx.textAlign="left";ctx.fillStyle="#d5dfd8"
+      const stamp=new Date().toLocaleString("en-US",{hour12:false})
+      ctx.fillText(`CAM 03  ·  ${stamp}`,14,H-14)
+      ctx.textAlign="right";ctx.fillText("ELEVATOR LOBBY",W-14,H-14)
+
+      ctx.textAlign="left";ctx.fillStyle="#d5dfd8";ctx.font="700 11px monospace";ctx.fillText("CH 03  1080P",16,29)
+      ctx.fillStyle="#f04d42";ctx.beginPath();ctx.arc(W-24,24,6,0,Math.PI*2);ctx.fill()
+      ctx.textAlign="right";ctx.fillStyle="#f0dbd8";ctx.fillText("REC",W-38,28)
+      drawVignette(ctx,W,H,.46)
       break
     }
   }
@@ -489,6 +481,7 @@ function drawBoothFrame(
 ) {
   ctx.clearRect(0,0,W,H)
   drawThemeBg(ctx,themeId,W,H)
+  if(themeId!=="cctv") drawThemeDetails(ctx,themeId,W,H)
 
   const pW=W*.52, pH=H*.92, pY=H*.025
   const maxGap=W*.01, minGap=-pW*.42
@@ -513,24 +506,8 @@ function drawBoothFrame(
       ctx.fillText(partnerVideo?"Removing their room background":"Their live camera will appear here",partX+pW/2,pY+pH/2+17); ctx.restore()
   }
 
-  // CCTV: apply green tint on top of the isolated people.
-  if(themeId==="cctv"){
-    if(localMask){
-      ctx.save(); ctx.beginPath()
-      rRect(ctx,youX,pY,pW,pH,8); ctx.clip()
-      ctx.fillStyle="rgba(0,40,0,0.15)"; ctx.fillRect(youX,pY,pW,pH)
-      ctx.restore()
-    }
-    if(partnerReady){
-      ctx.save(); ctx.beginPath()
-      rRect(ctx,partX,pY,pW,pH,8); ctx.clip()
-      ctx.fillStyle="rgba(0,40,0,0.15)"; ctx.fillRect(partX,pY,pW,pH)
-      ctx.restore()
-    }
-  }
-
-  drawThemeDetails(ctx,themeId,W,H)
-  if(!["cctv","arcade"].includes(themeId)) drawVignette(ctx,W,H)
+  if(themeId==="cctv") drawThemeDetails(ctx,themeId,W,H)
+  else drawVignette(ctx,W,H,.2)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

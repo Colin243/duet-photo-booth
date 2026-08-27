@@ -21,7 +21,7 @@ Open the local URL shown by Vite. Camera access requires `localhost` or HTTPS.
 - Peer-to-peer WebRTC video and audio
 - Synchronized layout, theme, navigation, and shutter countdown
 - Classic and wide strip layouts
-- Seven canvas-rendered booth themes
+- Four polished canvas-rendered booth themes: Classic, Laundromat, Elevator, and CCTV
 - On-device MediaPipe pose and hand tracking merged into full-person masks
 - Browser camera capture with a five-second countdown
 - Ten-shot contact sheet and ordered selection
