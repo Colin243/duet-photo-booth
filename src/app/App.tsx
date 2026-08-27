@@ -140,7 +140,7 @@ const THEMES: {
 }[] = [
   { id:"classic",  name:"Classic Plain",emoji:"✦",   tagline:"The original clean booth",   previewBg:"linear-gradient(160deg,#ffffff,#dceeff)", dark:false, accent:"#C85B82" },
   { id:"washer",   name:"Washer POV",    emoji:"◎",   tagline:"Camera inside, you outside", previewBg:"radial-gradient(circle,transparent 38%,rgba(20,25,27,.76) 66%),url('/theme-assets/laundromat-outside.jpg') center/cover", dark:true, accent:"#D6DEE0" },
-  { id:"elevator", name:"Elevator CCTV", emoji:"REC", tagline:"High-corner security view", previewBg:"linear-gradient(rgba(8,18,20,.25),rgba(8,18,20,.25)),url('/theme-assets/elevator-cctv-corner.jpg') center/cover", dark:true, accent:"#D8E3DE" },
+  { id:"elevator", name:"Elevator CCTV", emoji:"REC", tagline:"Cute corner-camera set", previewBg:"linear-gradient(rgba(255,245,249,.04),rgba(255,245,249,.04)),url('/theme-assets/elevator-cctv-cute.jpg') center/cover", dark:false, accent:"#E99ABC" },
 ]
 
 const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
@@ -152,7 +152,7 @@ const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
 
 const THEME_IMAGE_PATHS:Partial<Record<ThemeId,string>>={
   washer:"/theme-assets/laundromat-outside.jpg",
-  elevator:"/theme-assets/elevator-cctv-corner.jpg",
+  elevator:"/theme-assets/elevator-cctv-cute.jpg",
 }
 const WASHER_RIM_IMAGE_PATH="/theme-assets/washer-drum.jpg"
 const themeImageCache=new Map<string,HTMLImageElement>()
@@ -260,7 +260,7 @@ function drawThemeBg(ctx:CanvasRenderingContext2D, id:ThemeId, W:number, H:numbe
       ctx.fillStyle=depth;ctx.fillRect(0,0,W,H)
     }
     if(id==="elevator"){
-      ctx.fillStyle="rgba(12,27,31,.18)";ctx.fillRect(0,0,W,H)
+      ctx.fillStyle="rgba(255,245,249,.035)";ctx.fillRect(0,0,W,H)
     }
     return
   }
@@ -328,25 +328,25 @@ function drawWasherForeground(ctx:CanvasRenderingContext2D,W:number,H:number) {
 }
 
 function drawElevatorCctv(ctx:CanvasRenderingContext2D,W:number,H:number) {
-  ctx.fillStyle="rgba(12,31,29,.12)";ctx.fillRect(0,0,W,H)
-  ctx.fillStyle="rgba(0,0,0,.075)"
+  ctx.fillStyle="rgba(255,244,248,.035)";ctx.fillRect(0,0,W,H)
+  ctx.fillStyle="rgba(79,52,72,.035)"
   for(let y=0;y<H;y+=4)ctx.fillRect(0,y,W,1)
 
-  ctx.strokeStyle="rgba(220,234,227,.62)";ctx.lineWidth=2
+  ctx.strokeStyle="rgba(255,255,255,.72)";ctx.lineWidth=2
   const corner=24,pad=16
   ;[[pad,pad,1,1],[W-pad,pad,-1,1],[pad,H-pad,1,-1],[W-pad,H-pad,-1,-1]].forEach(([x,y,dx,dy])=>{
     ctx.beginPath();ctx.moveTo(x+dx*corner,y);ctx.lineTo(x,y);ctx.lineTo(x,y+dy*corner);ctx.stroke()
   })
 
-  ctx.fillStyle="rgba(3,7,8,.72)";ctx.fillRect(0,H-38,W,38)
-  ctx.font="700 12px monospace";ctx.textAlign="left";ctx.fillStyle="#dce8e1"
+  ctx.fillStyle="rgba(75,47,68,.58)";ctx.fillRect(0,H-36,W,36)
+  ctx.font="700 12px monospace";ctx.textAlign="left";ctx.fillStyle="#fff7fb"
   const stamp=new Date().toLocaleString("en-US",{hour12:false})
-  ctx.fillText(`CAM 03  ·  ${stamp}`,14,H-14)
-  ctx.textAlign="right";ctx.fillText("LIFT CABIN",W-14,H-14)
-  ctx.textAlign="left";ctx.font="700 11px monospace";ctx.fillText("LEVEL 12  ·  CH 03",16,29)
-  ctx.fillStyle="#f04d42";ctx.beginPath();ctx.arc(W-24,24,6,0,Math.PI*2);ctx.fill()
-  ctx.textAlign="right";ctx.fillStyle="#f6e0dc";ctx.fillText("REC",W-38,28)
-  drawVignette(ctx,W,H,.42)
+  ctx.fillText(`CAM 03  ·  ${stamp}`,14,H-13)
+  ctx.textAlign="right";ctx.fillText("PHOTO LIFT",W-14,H-13)
+  ctx.textAlign="left";ctx.font="700 11px monospace";ctx.fillStyle="rgba(91,58,80,.72)";ctx.fillText("LEVEL ♡  ·  CH 03",16,29)
+  ctx.fillStyle="#ef7fae";ctx.beginPath();ctx.arc(W-24,24,6,0,Math.PI*2);ctx.fill()
+  ctx.textAlign="right";ctx.fillStyle="rgba(91,58,80,.76)";ctx.fillText("REC",W-38,28)
+  drawVignette(ctx,W,H,.16)
 }
 
 function drawVignette(ctx:CanvasRenderingContext2D, W:number, H:number, strength=0.3) {
@@ -611,9 +611,9 @@ function drawBoothFrame(
   drawThemeBg(ctx,themeId,W,H)
   drawThemeDetails(ctx,themeId,W,H)
 
-  const pW=themeId==="washer"?W*.48:themeId==="elevator"?W*.36:W*.52
-  const pH=themeId==="washer"?H*.8:themeId==="elevator"?H*.64:H*.92
-  const pY=themeId==="washer"?H*.1:themeId==="elevator"?H*.27:H*.025
+  const pW=themeId==="washer"?W*.48:themeId==="elevator"?W*.42:W*.52
+  const pH=themeId==="washer"?H*.8:themeId==="elevator"?H*.76:H*.92
+  const pY=themeId==="washer"?H*.1:themeId==="elevator"?H*.18:H*.025
   const maxGap=W*.01, minGap=-pW*.42
   const gap=maxGap-(proximity/100)*(maxGap-minGap)
   const youX=W/2-pW-gap/2

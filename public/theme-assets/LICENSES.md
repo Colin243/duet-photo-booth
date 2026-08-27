@@ -26,7 +26,16 @@ modified, distributed, and used commercially without asking permission.
 This photograph is visible through the open drum. The public-domain washer-drum
 image supplies only the close foreground metal texture and gasket.
 
-## Elevator CCTV — current generated background
+## Elevator CCTV — current cute generated background
+
+- File: `elevator-cctv-cute.jpg`
+- Source: generated specifically for Duet with OpenAI ImageGen
+- Direction: a cream, blush, and powder-blue Korean photo-booth elevator set,
+  viewed steeply downward from a security camera in the ceiling corner
+- Local modification: center-cropped to 16:10, resized, and JPEG-compressed for
+  responsive web delivery
+
+## Elevator CCTV — earlier industrial generated background
 
 - File: `elevator-cctv-corner.jpg`
 - Source: generated specifically for Duet with OpenAI ImageGen

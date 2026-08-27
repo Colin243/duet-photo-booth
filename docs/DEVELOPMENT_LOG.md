@@ -76,7 +76,7 @@ machine drum:
 | --- | --- | --- |
 | Classic | Soft daylight studio | White-to-pastel-blue wall, central glow, restrained floor depth |
 | Washer POV | Camera inside the open machine looking outward | CC0 laundromat beyond the opening, people standing outside, close foreground barrel texture, circular gasket, perforations, and vignette |
-| Elevator CCTV | Security camera in the top-right ceiling corner | Original generated high-angle cabin background, downward composition, cool monitor grade, scanlines, recording indicator, timestamp, and lift-cabin label |
+| Elevator CCTV | Security camera in the top-right ceiling corner | Cute cream, blush, and powder-blue photo-studio lift set, downward composition, soft scanlines, pink recording indicator, timestamp, and photo-lift label |
 
 The realism pass used these references:
 
@@ -88,8 +88,10 @@ The washer camera now sits inside the machine and faces outward. A real CC0
 laundromat is drawn first, both people stand in that outside space and are
 visible only through the circular opening, and the barrel texture, perforations,
 and gasket are drawn last at close range. Elevator CCTV uses a purpose-generated
-empty cabin from a steep top-right security-camera angle; people are scaled
-smaller and lower so they occupy the floor rather than appearing at eye level.
+photo-booth-store lift set from a steep top-right security-camera angle. Cream,
+blush, powder blue, rounded panels, and soft studio lighting replace the earlier
+dark industrial steel; people remain smaller and lower so they occupy the floor
+rather than appearing at eye level.
 Source and generation records live beside the assets in
 `public/theme-assets/LICENSES.md`.
 
