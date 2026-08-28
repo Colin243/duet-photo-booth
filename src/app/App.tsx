@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, type MutableRefObject } from "react"
 import Peer, { type DataConnection, type MediaConnection } from "peerjs"
 import {
-  FilesetResolver, PoseLandmarker, HandLandmarker,
+  FilesetResolver, PoseLandmarker, HandLandmarker, FaceLandmarker,
   type NormalizedLandmark,
 } from "@mediapipe/tasks-vision"
 import { downloadStrip } from "../lib/downloadStrip"
@@ -112,13 +112,21 @@ type Screen = "landing"|"room"|"layout"|"theme"|"ready"|"booth"|"select"|"custom
 type Layout  = "classic"|"wide"
 type ThemeId = "classic"|"washer"|"elevator"
 type PropId = "none"|"glasses"|"partyHat"|"catEars"
+type PropLook = { propId:PropId; variant:number }
 type SkinSmoothing = 0|1|2
 type ParticipantId = "p1"|"p2"
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
+type FaceMotionFilterState = {
+  timestamp:number
+  raw:NormalizedLandmark[]
+  filtered:NormalizedLandmark[]
+  velocity:NormalizedLandmark[]
+}
 
 type SyncMessage =
-  | { type:"STATE"; screen:Screen; layout:Layout; themeId:ThemeId; propId:PropId }
+  | { type:"STATE"; screen:Screen; layout:Layout; themeId:ThemeId }
   | { type:"BEAUTY"; strength:SkinSmoothing }
+  | { type:"FILTER"; participant:ParticipantId; propId:PropId; variant:number }
   | { type:"FRONT"; participant:ParticipantId }
   | { type:"CAPTURE"; at:number }
 
@@ -151,7 +159,17 @@ const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
   {id:"none",name:"No filter",emoji:"○",tagline:"Keep it natural"},
   {id:"glasses",name:"XHS Heart Glow",emoji:"♡",tagline:"Glossy hearts and soft highlights"},
   {id:"partyHat",name:"Douyin Star Halo",emoji:"✦",tagline:"Floating stars with camera glow"},
-  {id:"catEars",name:"XMM Sticker Shuffle",emoji:"▦",tagline:"Cycling pixel catfish stickers"},
+  {id:"catEars",name:"XMM Pixel Set",emoji:"▦",tagline:"Five pixel looks you cycle yourself"},
+]
+
+const PROP_LOOKS:({name:string;emoji:string}&PropLook)[]=[
+  {propId:"glasses",variant:0,name:"XHS Heart Glow",emoji:"♡"},
+  {propId:"partyHat",variant:0,name:"Douyin Star Halo",emoji:"✦"},
+  {propId:"catEars",variant:0,name:"XMM Puppy",emoji:"▦"},
+  {propId:"catEars",variant:1,name:"XMM Moustache",emoji:"▦"},
+  {propId:"catEars",variant:2,name:"XMM Pixel Glasses",emoji:"▦"},
+  {propId:"catEars",variant:3,name:"XMM Toast Bear",emoji:"▦"},
+  {propId:"catEars",variant:4,name:"XMM Doodle Cat",emoji:"▦"},
 ]
 
 const THEME_IMAGE_PATHS:Partial<Record<ThemeId,string>>={
@@ -388,6 +406,98 @@ function drawVignette(ctx:CanvasRenderingContext2D, W:number, H:number, strength
 
 type PersonBounds={ x:number; y:number; width:number; height:number }
 
+function averageLandmarks(landmarks:NormalizedLandmark[],indices:number[]):NormalizedLandmark|undefined{
+  const points=indices.map(index=>landmarks[index]).filter(Boolean)
+  if(!points.length) return undefined
+  return {
+    x:points.reduce((sum,point)=>sum+point.x,0)/points.length,
+    y:points.reduce((sum,point)=>sum+point.y,0)/points.length,
+    z:points.reduce((sum,point)=>sum+point.z,0)/points.length,
+    visibility:1,
+  }
+}
+
+function faceAnchors(face:NormalizedLandmark[],fallbackPose:NormalizedLandmark[]){
+  return {
+    // Use whole facial regions rather than a single landmark. VTuber trackers
+    // favor stable contours because one eyelid or lip point can shift during
+    // blinking, smiling, speech, or partial hand occlusion.
+    leftEye:averageLandmarks(face,[33,133,159,145,153,154,155,173])||fallbackPose[2],
+    rightEye:averageLandmarks(face,[362,263,386,374,380,381,382,398])||fallbackPose[5],
+    nose:averageLandmarks(face,[1,2,4,5,19,94])||fallbackPose[0],
+    mouth:averageLandmarks(face,[0,13,14,17,61,78,291,308]),
+    forehead:averageLandmarks(face,[10,67,109,297,338]),
+    chin:averageLandmarks(face,[148,152,176,377,400]),
+    leftCheek:averageLandmarks(face,[93,127,132,162,234]),
+    rightCheek:averageLandmarks(face,[323,356,361,389,454]),
+  }
+}
+
+const oneEuroAlpha=(cutoff:number,deltaSeconds:number)=>{
+  const tau=1/(2*Math.PI*Math.max(.001,cutoff))
+  return 1/(1+tau/Math.max(1/120,deltaSeconds))
+}
+
+function filterFaceLandmarks(
+  stateRef:MutableRefObject<FaceMotionFilterState|null>,
+  next:NormalizedLandmark[],
+  timestamp:number,
+){
+  const previous=stateRef.current
+  if(!previous||previous.raw.length!==next.length||timestamp<=previous.timestamp||timestamp-previous.timestamp>260){
+    const initial=next.map(point=>({...point}))
+    stateRef.current={
+      timestamp,
+      raw:initial,
+      filtered:initial,
+      velocity:initial.map(()=>({x:0,y:0,z:0,visibility:1})),
+    }
+    return initial
+  }
+
+  const deltaSeconds=Math.max(1/120,Math.min(.12,(timestamp-previous.timestamp)/1000))
+  const derivativeAlpha=oneEuroAlpha(1.25,deltaSeconds)
+  const velocity:NormalizedLandmark[]=[]
+  const filtered:NormalizedLandmark[]=[]
+  const predicted:NormalizedLandmark[]=[]
+
+  next.forEach((point,index)=>{
+    const beforeRaw=previous.raw[index]
+    const beforeFiltered=previous.filtered[index]
+    const beforeVelocity=previous.velocity[index]
+    const rawVelocity={
+      x:(point.x-beforeRaw.x)/deltaSeconds,
+      y:(point.y-beforeRaw.y)/deltaSeconds,
+      z:(point.z-beforeRaw.z)/deltaSeconds,
+    }
+    const nextVelocity={
+      x:beforeVelocity.x+(rawVelocity.x-beforeVelocity.x)*derivativeAlpha,
+      y:beforeVelocity.y+(rawVelocity.y-beforeVelocity.y)*derivativeAlpha,
+      z:beforeVelocity.z+(rawVelocity.z-beforeVelocity.z)*derivativeAlpha,
+      visibility:1,
+    }
+    const speed=Math.hypot(nextVelocity.x,nextVelocity.y)
+    // One-Euro-style adaptive cutoff: calm faces are stabilized, while quick
+    // turns and nods receive a much higher cutoff to avoid visible drag.
+    const adaptiveAlpha=oneEuroAlpha(1.7+speed*5.5,deltaSeconds)
+    const nextFiltered={
+      ...point,
+      x:beforeFiltered.x+(point.x-beforeFiltered.x)*adaptiveAlpha,
+      y:beforeFiltered.y+(point.y-beforeFiltered.y)*adaptiveAlpha,
+      z:beforeFiltered.z+(point.z-beforeFiltered.z)*adaptiveAlpha,
+    }
+    const predictionSeconds=.012
+    const leadX=Math.max(-.012,Math.min(.012,nextVelocity.x*predictionSeconds))
+    const leadY=Math.max(-.012,Math.min(.012,nextVelocity.y*predictionSeconds))
+    velocity.push(nextVelocity)
+    filtered.push(nextFiltered)
+    predicted.push({...nextFiltered,x:nextFiltered.x+leadX,y:nextFiltered.y+leadY})
+  })
+
+  stateRef.current={timestamp,raw:next.map(point=>({...point})),filtered,velocity}
+  return predicted
+}
+
 function renderLandmarkSupport(
   supportCanvas:HTMLCanvasElement,
   pose:NormalizedLandmark[],
@@ -493,12 +603,14 @@ function boundsFromTracking(
 function drawTrackedProp(
   ctx:CanvasRenderingContext2D,
   propId:PropId,
+  propVariant:number,
   pose:NormalizedLandmark[],
+  face:NormalizedLandmark[],
   tracked:PersonBounds,
   drawX:number,drawY:number,drawW:number,drawH:number
 ) {
   if(propId==="none") return
-  const leftEye=pose[2],rightEye=pose[5]
+  const {leftEye,rightEye,nose,mouth}=faceAnchors(face,pose)
   if(!leftEye||!rightEye||(leftEye.visibility??1)<.35||(rightEye.visibility??1)<.35) return
   const point=(landmark:NormalizedLandmark)=>({
     x:drawX+((landmark.x-tracked.x)/tracked.width)*drawW,
@@ -509,6 +621,8 @@ function drawTrackedProp(
   const eyeDistance=Math.hypot(dx,dy)
   if(!Number.isFinite(eyeDistance)||eyeDistance<5) return
   const centerX=(left.x+right.x)/2,centerY=(left.y+right.y)/2
+  const noseY=nose?point(nose).y-centerY:eyeDistance*.48
+  const mouthY=mouth?point(mouth).y-centerY:eyeDistance*.82
   // Pose landmarks may arrive with the eye vector pointing right-to-left.
   // Normalize it to an upright half-turn so crowns and ears never flip below
   // the face while still following natural head tilt.
@@ -550,8 +664,8 @@ function drawTrackedProp(
     ;[-1.18,1.18].forEach(side=>sparkle(side*eyeDistance,-eyeDistance*.48,eyeDistance*.13,"rgba(255,255,255,.9)"))
   }
   if(propId==="catEars"){
-    // XMM references use deliberately crunchy, early-web pixel stickers and
-    // cycle combinations instead of holding one polished accessory forever.
+    // XMM references use deliberately crunchy, early-web pixel stickers. The
+    // participant chooses the look; it stays fixed for the captured photo.
     ctx.shadowBlur=0;ctx.imageSmoothingEnabled=false
     const p=Math.max(3,Math.round(eyeDistance*.095))
     const block=(x:number,y:number,w:number,h:number,color:string)=>{
@@ -564,10 +678,10 @@ function drawTrackedProp(
       const x=side*eyeDistance*.72
       rows(["00100","01110","11211","11111"],x,-eyeDistance*1.15,"#17131e",.9)
     })
-    const nose=()=>rows(["01110","12221","01110"],0,eyeDistance*.45,"#2a202d",.75)
-    const phase=Math.floor(Date.now()/1650)%5
+    const noseSticker=()=>rows(["01110","12221","01110"],0,noseY-eyeDistance*.1,"#2a202d",.75)
+    const phase=Math.max(0,Math.min(4,Math.round(propVariant)))
     if(phase===0){
-      ears();nose()
+      ears();noseSticker()
       // Pixel bone sits diagonally beside the chin, matching the playful dog
       // sticker combinations in the references.
       ctx.save();ctx.translate(eyeDistance*.72,eyeDistance*.62);ctx.rotate(-.62)
@@ -575,11 +689,11 @@ function drawTrackedProp(
     } else if(phase===1){
       // Oversized moustache plus a small bow—the intentionally silly
       // "catfish" disguise shown across the still and video references.
-      rows(["100000001","110000011","111000111","111111111","011111110","001111100"],0,eyeDistance*.55,"#111018",.82)
+      rows(["100000001","110000011","111000111","111111111","011111110","001111100"],0,mouthY-eyeDistance*.22,"#111018",.82)
       rows(["110011","111111","011110","001100"],eyeDistance*.72,-eyeDistance*1.2,"#ff5ca8",.86)
       block(eyeDistance*.72-p*.45,-eyeDistance*1.2+p*1.1,p*.9,p*.9,"#fff")
     } else if(phase===2) {
-      ears();nose()
+      ears();noseSticker()
       // Chunky round glasses with white lenses and black pixel outlines.
       ;[-1,1].forEach(side=>{
         const x=side*eyeDistance*.52
@@ -594,7 +708,7 @@ function drawTrackedProp(
         rows(["01110","11211","11111","01110"],x,-eyeDistance*1.08,"#9b692f",.78)
         block(x-p*.45,-eyeDistance*.9,p*.9,p*.9,"#ffd93d")
       })
-      rows(["011110","122221","123321","122221","011110"],0,eyeDistance*.55,"#b47a3c",.68)
+      rows(["011110","122221","123321","122221","011110"],0,mouthY-eyeDistance*.16,"#b47a3c",.68)
       // Small side sticker keeps the deliberately busy Random Sticker feel.
       rows(["010","111","010"],-eyeDistance*1.22,-eyeDistance*.68,"#ff6da9",.55)
     } else {
@@ -627,12 +741,13 @@ function drawSkinSoftening(
   ctx:CanvasRenderingContext2D,
   scratch:HTMLCanvasElement,
   pose:NormalizedLandmark[],
+  face:NormalizedLandmark[],
   tracked:PersonBounds,
   drawX:number,drawY:number,drawW:number,drawH:number,
   strength:SkinSmoothing
 ) {
   if(strength===0) return
-  const leftEye=pose[2],rightEye=pose[5]
+  const {leftEye,rightEye}=faceAnchors(face,pose)
   if(!leftEye||!rightEye||(leftEye.visibility??1)<.35||(rightEye.visibility??1)<.35) return
   const point=(landmark:NormalizedLandmark)=>({
     x:drawX+((landmark.x-tracked.x)/tracked.width)*drawW,
@@ -685,7 +800,9 @@ function drawPersonCutout(
   mask:HTMLCanvasElement,
   personBounds:PersonBounds|null,
   pose:NormalizedLandmark[],
+  face:NormalizedLandmark[],
   propId:PropId,
+  propVariant:number,
   skinSmoothing:SkinSmoothing,
   scratch:HTMLCanvasElement,
   x:number, y:number, width:number, height:number,
@@ -701,9 +818,17 @@ function drawPersonCutout(
   const sourceH=video instanceof HTMLVideoElement?video.videoHeight:video.height
   const sx=tracked.x*sourceW, sy=tracked.y*sourceH
   const sw=tracked.width*sourceW, sh=tracked.height*sourceH
-  const scale=Math.min(width/sw,height/sh)
+  const fitScale=Math.min(width/sw,height/sh)
+  const {leftEye,rightEye,forehead,chin}=faceAnchors(face,pose)
+  const faceEyePixels=leftEye&&rightEye?Math.hypot((rightEye.x-leftEye.x)*sourceW,(rightEye.y-leftEye.y)*sourceH):0
+  const faceHeightPixels=forehead&&chin?Math.hypot((chin.x-forehead.x)*sourceW,(chin.y-forehead.y)*sourceH):0
+  const normalizedScale=faceHeightPixels>8?(height*.245)/faceHeightPixels:faceEyePixels>4?(width*.135)/faceEyePixels:fitScale
+  const scale=Math.max(fitScale*.52,Math.min(fitScale*1.5,normalizedScale))
   const drawW=sw*scale, drawH=sh*scale
-  const drawX=x+(width-drawW)/2, drawY=y+height-drawH
+  const faceCenterX=leftEye&&rightEye?(leftEye.x+rightEye.x)/2:(tracked.x+tracked.width/2)
+  const faceCenterY=forehead&&chin?(forehead.y+chin.y)/2:leftEye&&rightEye?(leftEye.y+rightEye.y)/2:tracked.y+tracked.height*.25
+  const drawX=x+width/2-(faceCenterX*sourceW-sx)*scale
+  const drawY=y+height*.27-(faceCenterY*sourceH-sy)*scale
   work.drawImage(video,sx,sy,sw,sh,drawX,drawY,drawW,drawH)
   work.globalCompositeOperation="destination-in"
   work.drawImage(
@@ -725,8 +850,8 @@ function drawPersonCutout(
   if(mirrored){ ctx.translate(drawX*2+drawW,0); ctx.scale(-1,1) }
   ctx.drawImage(scratch,drawX,drawY,drawW,drawH,drawX,drawY,drawW,drawH)
   ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0
-  drawSkinSoftening(ctx,scratch,pose,tracked,drawX,drawY,drawW,drawH,skinSmoothing)
-  drawTrackedProp(ctx,propId,pose,tracked,drawX,drawY,drawW,drawH)
+  drawSkinSoftening(ctx,scratch,pose,face,tracked,drawX,drawY,drawW,drawH,skinSmoothing)
+  drawTrackedProp(ctx,propId,propVariant,pose,face,tracked,drawX,drawY,drawW,drawH)
   ctx.restore()
 }
 
@@ -736,7 +861,8 @@ function drawBoothFrame(
   partnerVideo:HTMLVideoElement|null,
   W:number, H:number,
   themeId:ThemeId,
-  propId:PropId,
+  localProp:PropLook,
+  partnerProp:PropLook,
   localSkinSmoothing:SkinSmoothing,
   partnerSkinSmoothing:SkinSmoothing,
   frontParticipant:ParticipantId,
@@ -748,6 +874,8 @@ function drawBoothFrame(
   partnerBounds:PersonBounds|null,
   localPose:NormalizedLandmark[],
   partnerPose:NormalizedLandmark[],
+  localFace:NormalizedLandmark[],
+  partnerFace:NormalizedLandmark[],
   localScratch:HTMLCanvasElement,
   partnerScratch:HTMLCanvasElement,
   localFrame:HTMLCanvasElement,
@@ -776,10 +904,10 @@ function drawBoothFrame(
   const localReady=video.readyState>=2&&localFrame.width>0&&Boolean(localMask)
   const partnerReady=Boolean(partnerVideo&&partnerVideo.readyState>=2&&partnerFrame.width>0&&partnerMask)
   const drawLocal=()=>{
-    if(localReady&&localMask) drawPersonCutout(ctx,localFrame,localMask,localBounds,localPose,propId,localSkinSmoothing,localScratch,youX,pY,pW,pH,true,captureQuality)
+    if(localReady&&localMask) drawPersonCutout(ctx,localFrame,localMask,localBounds,localPose,localFace,localProp.propId,localProp.variant,localSkinSmoothing,localScratch,youX,pY,pW,pH,true,captureQuality)
   }
   const drawPartner=()=>{
-    if(partnerReady&&partnerVideo&&partnerMask) drawPersonCutout(ctx,partnerFrame,partnerMask,partnerBounds,partnerPose,propId,partnerSkinSmoothing,partnerScratch,partX,pY,pW,pH,true,captureQuality)
+    if(partnerReady&&partnerVideo&&partnerMask) drawPersonCutout(ctx,partnerFrame,partnerMask,partnerBounds,partnerPose,partnerFace,partnerProp.propId,partnerProp.variant,partnerSkinSmoothing,partnerScratch,partX,pY,pW,pH,true,captureQuality)
   }
   if(partnerReady){
     const localIsFront=frontParticipant===localParticipant
@@ -1043,7 +1171,7 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
       <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:680, textAlign:"center" }}>
         <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  2 / 3</p>
         <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Choose your scene</h2>
-        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Choose a shared background, then add an optional face-tracked social-camera filter for both of you.</p>
+        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Choose a shared background, then pick your own optional face filter. Your partner chooses theirs separately.</p>
 
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(156px,1fr))", gap:12, marginBottom:24 }}>
           {THEMES.map(t=>(
@@ -1057,7 +1185,7 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
         </div>
 
         <div style={{ background:"linear-gradient(145deg,rgba(255,255,255,.94),rgba(255,240,247,.82))",border:"1px solid rgba(200,91,130,.2)",borderRadius:18,padding:"18px",marginBottom:28,boxShadow:"0 12px 32px rgba(115,71,98,.1)" }}>
-          <p style={{ fontSize:11,letterSpacing:".14em",color:"#C85B82",fontWeight:900,marginBottom:12 }}>SHARED FACE FILTERS · LIVE</p>
+          <p style={{ fontSize:11,letterSpacing:".14em",color:"#C85B82",fontWeight:900,marginBottom:12 }}>YOUR STARTING FILTER · OPTIONAL</p>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(118px,1fr))",gap:9 }}>
             {PROPS.map(prop=>(
               <button key={prop.id} onClick={()=>onPropSelect(prop.id)} style={{ borderRadius:13,padding:"12px 6px",border:`1.5px solid ${selectedProp===prop.id?"#C85B82":"#E7D9E2"}`,background:selectedProp===prop.id?"linear-gradient(145deg,#fff,#FFF1F7)":"rgba(255,255,255,.7)",boxShadow:selectedProp===prop.id?"0 7px 18px rgba(200,91,130,.18)":"0 3px 10px rgba(59,36,68,.06)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all .16s",transform:selectedProp===prop.id?"translateY(-2px)":"none" }}>
@@ -1067,7 +1195,7 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
               </button>
             ))}
           </div>
-          <p style={{ fontSize:10,color:"#8F7287",marginTop:12 }}>Glow effects and cycling pixel-sticker sets follow both faces and stay synchronized across the room.</p>
+          <p style={{ fontSize:10,color:"#8F7287",marginTop:12 }}>Your choice follows only your face. It stays fixed until you turn it off or cycle to another look in the booth.</p>
         </div>
 
         <button onClick={onContinue} style={{ width:"100%", padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}>
@@ -1169,9 +1297,10 @@ function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmo
 // BOOTH SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,layout,captureAt,onFrontParticipantChange,onCaptureRequest,onPhotoCapture,onDone }:{
-  stream:MediaStream|null;remoteStream:MediaStream|null;themeId:ThemeId;propId:PropId;
+function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,layout,captureAt,onLocalPropChange,onFrontParticipantChange,onCaptureRequest,onPhotoCapture,onDone }:{
+  stream:MediaStream|null;remoteStream:MediaStream|null;themeId:ThemeId;localProp:PropLook;partnerProp:PropLook;
   skinSmoothing:SkinSmoothing;partnerSkinSmoothing:SkinSmoothing;frontParticipant:ParticipantId;localParticipant:ParticipantId;layout:Layout;captureAt:number|null;
+  onLocalPropChange:(look:PropLook)=>void;
   onFrontParticipantChange:(participant:ParticipantId)=>void;
   onCaptureRequest:()=>void; onPhotoCapture:(dataUrl:string)=>void; onDone:()=>void
 }) {
@@ -1183,6 +1312,8 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
   const partnerPoseTrackerRef=useRef<PoseLandmarker|null>(null)
   const localHandTrackerRef=useRef<HandLandmarker|null>(null)
   const partnerHandTrackerRef=useRef<HandLandmarker|null>(null)
+  const localFaceTrackerRef=useRef<FaceLandmarker|null>(null)
+  const partnerFaceTrackerRef=useRef<FaceLandmarker|null>(null)
   const localMaskRef= useRef(document.createElement("canvas"))
   const partnerMaskRef=useRef(document.createElement("canvas"))
   const localSupportRef=useRef(document.createElement("canvas"))
@@ -1195,12 +1326,20 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
   const partnerBoundsRef=useRef<PersonBounds|null>(null)
   const localPoseRef=useRef<NormalizedLandmark[]>([])
   const partnerPoseRef=useRef<NormalizedLandmark[]>([])
+  const localFaceRef=useRef<NormalizedLandmark[]>([])
+  const partnerFaceRef=useRef<NormalizedLandmark[]>([])
   const localPoseSeenRef=useRef(0)
   const partnerPoseSeenRef=useRef(0)
   const lastSegmentRef=useRef(0)
   const trackerTimestampRef=useRef(0)
   const segmentBusyRef=useRef(false)
   const segmentPartnerNextRef=useRef(false)
+  const localFaceSeenRef=useRef(0)
+  const partnerFaceSeenRef=useRef(0)
+  const lastFaceTrackRef=useRef(0)
+  const faceTimestampRef=useRef(0)
+  const faceBusyRef=useRef(false)
+  const facePartnerNextRef=useRef(false)
   const rafRef      = useRef<number>()
   const timerRef    = useRef<ReturnType<typeof setInterval>>()
   const [photos, setPhotos]     = useState<string[]>([])
@@ -1213,6 +1352,11 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
   const [partnerMaskReady,setPartnerMaskReady]=useState(false)
   const localMaskReadyRef=useRef(false)
   const partnerMaskReadyRef=useRef(false)
+  const lastActiveLookRef=useRef<PropLook>(localProp.propId==="none"?{propId:"glasses",variant:0}:localProp)
+
+  useEffect(()=>{
+    if(localProp.propId!=="none") lastActiveLookRef.current=localProp
+  },[localProp])
 
   const theme  = THEMES.find(t=>t.id===themeId)!
   const isDark = theme.dark
@@ -1252,15 +1396,26 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
             minHandPresenceConfidence:.5,
             minTrackingConfidence:.5,
           } as const
-        const [localPose,partnerPose,localHands,partnerHands]=await Promise.all([
+        const faceOptions={
+          baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task" },
+          runningMode:"VIDEO",
+          numFaces:1,
+          minFaceDetectionConfidence:.42,
+          minFacePresenceConfidence:.4,
+          minTrackingConfidence:.42,
+        } as const
+        const [localPose,partnerPose,localHands,partnerHands,localFace,partnerFace]=await Promise.all([
           PoseLandmarker.createFromOptions(vision,poseOptions),
           PoseLandmarker.createFromOptions(vision,poseOptions),
           HandLandmarker.createFromOptions(vision,handOptions),
           HandLandmarker.createFromOptions(vision,handOptions),
+          FaceLandmarker.createFromOptions(vision,faceOptions),
+          FaceLandmarker.createFromOptions(vision,faceOptions),
         ])
-        if(cancelled){ localPose.close();partnerPose.close();localHands.close();partnerHands.close();return }
+        if(cancelled){ localPose.close();partnerPose.close();localHands.close();partnerHands.close();localFace.close();partnerFace.close();return }
         localPoseTrackerRef.current=localPose;partnerPoseTrackerRef.current=partnerPose
         localHandTrackerRef.current=localHands;partnerHandTrackerRef.current=partnerHands
+        localFaceTrackerRef.current=localFace;partnerFaceTrackerRef.current=partnerFace
         setSegmentStatus("ready")
       }catch(error){
         console.error("Person segmentation could not start",error)
@@ -1271,9 +1426,20 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
       cancelled=true
       localPoseTrackerRef.current?.close();partnerPoseTrackerRef.current?.close()
       localHandTrackerRef.current?.close();partnerHandTrackerRef.current?.close()
+      localFaceTrackerRef.current?.close();partnerFaceTrackerRef.current?.close()
       localPoseTrackerRef.current=null;partnerPoseTrackerRef.current=null
       localHandTrackerRef.current=null;partnerHandTrackerRef.current=null
+      localFaceTrackerRef.current=null;partnerFaceTrackerRef.current=null
     }
+  },[])
+
+  const updateFaceTracking=useCallback((video:HTMLVideoElement,faceTracker:FaceLandmarker|null,faceRef:MutableRefObject<NormalizedLandmark[]>,lastSeenRef:MutableRefObject<number>,timestamp:number)=>{
+    if(!faceTracker||video.readyState<2||!video.videoWidth) return
+    const detectedFace=faceTracker.detectForVideo(video,timestamp).faceLandmarks[0]||[]
+    if(detectedFace.length){
+      faceRef.current=smoothPoseLandmarks(faceRef.current,detectedFace,.58)
+      lastSeenRef.current=timestamp
+    }else if(timestamp-lastSeenRef.current>300) faceRef.current=[]
   },[])
 
   const updatePersonMask=useCallback((video:HTMLVideoElement,poseTracker:PoseLandmarker|null,handTracker:HandLandmarker|null,frameCanvas:HTMLCanvasElement,maskCanvas:HTMLCanvasElement,supportCanvas:HTMLCanvasElement,boundsRef:MutableRefObject<PersonBounds|null>,poseRef:MutableRefObject<NormalizedLandmark[]>,lastSeenRef:MutableRefObject<number>,onFirstMask:()=>void,timestamp:number)=>{
@@ -1303,8 +1469,8 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
         // Landmarks only lower the segmentation threshold around a likely limb;
         // they never punch an opaque skeleton-shaped hole into the background.
         const landmarkSupport=supportPixels[p+3]/255
-        const threshold=.23-landmarkSupport*.09
-        const normalized=Math.max(0,Math.min(1,(values[i]-threshold)/.44))
+        const threshold=.255-landmarkSupport*.1
+        const normalized=Math.max(0,Math.min(1,(values[i]-threshold)/.39))
         const feathered=normalized*normalized*(3-2*normalized)
         matteAlpha[i]=Math.round(feathered*255)
       }
@@ -1319,7 +1485,7 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
         if(x<width-1) neighborMin=Math.min(neighborMin,matteAlpha[i+1])
         if(y>0) neighborMin=Math.min(neighborMin,matteAlpha[i-width])
         if(y<height-1) neighborMin=Math.min(neighborMin,matteAlpha[i+width])
-        const refined=Math.round(center*.76+neighborMin*.24)
+        const refined=Math.round(center*.66+neighborMin*.34)
         pixels[p]=pixels[p+1]=pixels[p+2]=255
         pixels[p+3]=refined
       }
@@ -1336,7 +1502,24 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
     const ctx=canvas.getContext("2d")!
     const loop=()=>{
       const now=performance.now()
-      if(localPoseTrackerRef.current&&partnerPoseTrackerRef.current&&localHandTrackerRef.current&&partnerHandTrackerRef.current&&!segmentBusyRef.current&&now-lastSegmentRef.current>66){
+      if(localFaceTrackerRef.current&&partnerFaceTrackerRef.current&&!faceBusyRef.current&&now-lastFaceTrackRef.current>32){
+        faceBusyRef.current=true
+        try{
+          const faceTimestamp=Math.max(Math.floor(now),faceTimestampRef.current+2)
+          const partner=partnerRef.current
+          const processPartner=Boolean(partner&&remoteStream&&facePartnerNextRef.current)
+          if(processPartner&&partner){
+            updateFaceTracking(partner,partnerFaceTrackerRef.current,partnerFaceRef,partnerFaceSeenRef,faceTimestamp)
+          }else{
+            updateFaceTracking(video,localFaceTrackerRef.current,localFaceRef,localFaceSeenRef,faceTimestamp)
+          }
+          facePartnerNextRef.current=Boolean(partner&&remoteStream)&&!facePartnerNextRef.current
+          faceTimestampRef.current=faceTimestamp
+          lastFaceTrackRef.current=now
+        }catch(error){ console.warn("Face tracking frame skipped",error) }
+        finally{ faceBusyRef.current=false }
+      }
+      if(localPoseTrackerRef.current&&partnerPoseTrackerRef.current&&localHandTrackerRef.current&&partnerHandTrackerRef.current&&localFaceTrackerRef.current&&partnerFaceTrackerRef.current&&!segmentBusyRef.current&&now-lastSegmentRef.current>66){
         segmentBusyRef.current=true
         try{
           const localTimestamp=Math.max(Math.floor(now),trackerTimestampRef.current+2)
@@ -1361,36 +1544,38 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
         finally{ segmentBusyRef.current=false }
       }
       drawBoothFrame(
-        ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,propId,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,proximity,
+        ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,localProp,partnerProp,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,proximity,
         localMaskReadyRef.current?localMaskRef.current:null,
         partnerMaskReadyRef.current?partnerMaskRef.current:null,
         localBoundsRef.current,partnerBoundsRef.current,
         localPoseRef.current,partnerPoseRef.current,
+        localFaceRef.current,partnerFaceRef.current,
         localScratchRef.current,partnerScratchRef.current,localFrameRef.current,partnerFrameRef.current,false
       )
       rafRef.current=requestAnimationFrame(loop)
     }
     loop()
     return ()=>{ if(rafRef.current) cancelAnimationFrame(rafRef.current) }
-  },[themeId,propId,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,proximity,remoteStream,updatePersonMask])
+  },[themeId,localProp,partnerProp,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,proximity,remoteStream,updateFaceTracking,updatePersonMask])
 
   const doCapture = useCallback(()=>{
     const video=vidRef.current, canvas=captureRef.current
     if(!video||!canvas) return
     const ctx=canvas.getContext("2d")!
     drawBoothFrame(
-      ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,propId,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,proximity,
+      ctx,video,partnerRef.current,canvas.width,canvas.height,themeId,localProp,partnerProp,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,proximity,
       localMaskReadyRef.current?localMaskRef.current:null,
       partnerMaskReadyRef.current?partnerMaskRef.current:null,
       localBoundsRef.current,partnerBoundsRef.current,
       localPoseRef.current,partnerPoseRef.current,
+      localFaceRef.current,partnerFaceRef.current,
       localScratchRef.current,partnerScratchRef.current,localFrameRef.current,partnerFrameRef.current,true
     )
     const url=canvas.toDataURL("image/jpeg",0.93)
     setPhotos(prev=>[...prev,url])
     onPhotoCapture(url)
     setPoked(true); setTimeout(()=>setPoked(false),900)
-  },[themeId,propId,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,proximity,onPhotoCapture])
+  },[themeId,localProp,partnerProp,skinSmoothing,partnerSkinSmoothing,frontParticipant,localParticipant,proximity,onPhotoCapture])
 
   useEffect(()=>{
     if(!captureAt||photos.length>=MAX) return
@@ -1413,6 +1598,13 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
   const fg   = isDark?"#fff":"#2D1B2E"
   const sub  = isDark?"rgba(255,255,255,0.45)":"#9B7B90"
   const acc  = isDark?theme.accent:"#C85B82"
+  const activeLookIndex=PROP_LOOKS.findIndex(look=>look.propId===localProp.propId&&look.variant===localProp.variant)
+  const activeLook=activeLookIndex>=0?PROP_LOOKS[activeLookIndex]:null
+  const cycleLocalFilter=(direction:-1|1)=>{
+    const current=activeLookIndex>=0?activeLookIndex:direction>0?-1:0
+    const next=(current+direction+PROP_LOOKS.length)%PROP_LOOKS.length
+    onLocalPropChange({propId:PROP_LOOKS[next].propId,variant:PROP_LOOKS[next].variant})
+  }
 
   return (
     <div style={{ minHeight:"100vh", background:bg, display:"flex", flexDirection:"column", fontFamily:"'Nunito',sans-serif", position:"relative", overflowX:"hidden", overflowY:"auto" }}>
@@ -1472,6 +1664,15 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
           <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>Closer →</span>
         </div>
 
+        <div style={{ display:"flex",alignItems:"center",gap:7,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(200,91,130,.16)"}`,borderRadius:50,padding:"6px 7px 6px 13px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.06)" }}>
+          <span style={{ fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",marginRight:1 }}>YOUR FILTER</span>
+          <button onClick={()=>cycleLocalFilter(-1)} aria-label="Previous filter" style={{ width:30,height:30,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.15)":"#E7D9E2"}`,background:"transparent",color:fg,cursor:"pointer",display:"grid",placeItems:"center" }}><ChevronLeft size={14}/></button>
+          <button onClick={()=>onLocalPropChange(activeLook?{propId:"none",variant:0}:lastActiveLookRef.current)} aria-pressed={Boolean(activeLook)} style={{ minWidth:142,height:34,borderRadius:20,border:`1px solid ${activeLook?acc:isDark?"rgba(255,255,255,.14)":"#E7D9E2"}`,background:activeLook?acc:"transparent",color:activeLook?"#fff":fg,fontFamily:"'Nunito',sans-serif",fontSize:11,fontWeight:900,cursor:"pointer",padding:"0 12px" }}>
+            {activeLook?`${activeLook.emoji}  ${activeLook.name}`:"○  Filter off"}
+          </button>
+          <button onClick={()=>cycleLocalFilter(1)} aria-label="Next filter" style={{ width:30,height:30,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.15)":"#E7D9E2"}`,background:"transparent",color:fg,cursor:"pointer",display:"grid",placeItems:"center" }}><ChevronRight size={14}/></button>
+        </div>
+
         <div style={{ display:"flex",alignItems:"center",gap:8,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.86)",border:`1px solid ${isDark?"rgba(255,255,255,.09)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 9px 7px 14px",backdropFilter:"blur(12px)" }}>
           <span style={{ fontSize:11,color:sub,fontWeight:800,letterSpacing:".06em",marginRight:2 }}>FRONT PERSON</span>
           {(["p1","p2"] as ParticipantId[]).map(participant=>{
@@ -1483,7 +1684,7 @@ function BoothScreen({ stream, remoteStream, themeId,propId,skinSmoothing,partne
         </div>
 
         <div style={{ fontSize:11, color:segmentStatus==="error"?"#ef4444":sub, fontWeight:600 }}>
-          {segmentStatus==="error"?"Body tracking could not load — refresh to retry":masksReady?"Bodies and hands tracked ✓":"Preparing body and hand tracking…"}
+          {segmentStatus==="error"?"Body tracking could not load — refresh to retry":masksReady?"Fast face filters + body tracking ready ✓":"Preparing face and body tracking…"}
         </div>
 
         {/* Thumbnails */}
@@ -1822,7 +2023,8 @@ export default function App() {
   const [screen,  setScreen]  = useState<Screen>(initialRoom.length===6?"room":"landing")
   const [layout,  setLayout]  = useState<Layout>("classic")
   const [themeId, setThemeId] = useState<ThemeId>("classic")
-  const [propId,  setPropId]  = useState<PropId>("none")
+  const [localProp,setLocalProp]=useState<PropLook>({propId:"none",variant:0})
+  const [partnerProp,setPartnerProp]=useState<PropLook>({propId:"none",variant:0})
   const [frontParticipant,setFrontParticipant]=useState<ParticipantId>("p1")
   const [skinSmoothing,setSkinSmoothing]=useState<SkinSmoothing>(0)
   const [partnerSkinSmoothing,setPartnerSkinSmoothing]=useState<SkinSmoothing>(0)
@@ -1843,13 +2045,15 @@ export default function App() {
   const peerRef=useRef<Peer|null>(null)
   const dataRef=useRef<DataConnection|null>(null)
   const mediaRef=useRef<MediaConnection|null>(null)
-  const syncRef=useRef({screen,layout,themeId,propId})
+  const syncRef=useRef({screen,layout,themeId})
   const beautyRef=useRef<SkinSmoothing>(skinSmoothing)
   const frontRef=useRef<ParticipantId>(frontParticipant)
+  const filterRef=useRef<PropLook>(localProp)
 
-  useEffect(()=>{ syncRef.current={screen,layout,themeId,propId} },[screen,layout,themeId,propId])
+  useEffect(()=>{ syncRef.current={screen,layout,themeId} },[screen,layout,themeId])
   useEffect(()=>{ beautyRef.current=skinSmoothing },[skinSmoothing])
   useEffect(()=>{ frontRef.current=frontParticipant },[frontParticipant])
+  useEffect(()=>{ filterRef.current=localProp },[localProp])
 
   const sendMessage=(message:SyncMessage)=>{
     if(dataRef.current?.open) dataRef.current.send(message)
@@ -1857,22 +2061,24 @@ export default function App() {
 
   const navigate=(next:Screen)=>{
     setScreen(next)
-    sendMessage({type:"STATE",screen:next,layout,themeId,propId})
+    sendMessage({type:"STATE",screen:next,layout,themeId})
   }
 
   const chooseLayout=(next:Layout)=>{
     setLayout(next)
-    sendMessage({type:"STATE",screen,layout:next,themeId,propId})
+    sendMessage({type:"STATE",screen,layout:next,themeId})
   }
 
   const chooseTheme=(next:ThemeId)=>{
     setThemeId(next)
-    sendMessage({type:"STATE",screen,layout,themeId:next,propId})
+    sendMessage({type:"STATE",screen,layout,themeId:next})
   }
 
-  const chooseProp=(next:PropId)=>{
-    setPropId(next)
-    sendMessage({type:"STATE",screen,layout,themeId,propId:next})
+  const chooseProp=(next:PropId|PropLook)=>{
+    const look=typeof next==="string"?{propId:next,variant:0}:next
+    setLocalProp(look)
+    filterRef.current=look
+    sendMessage({type:"FILTER",participant:isHost?"p1":"p2",...look})
   }
 
   const chooseSkinSmoothing=(next:SkinSmoothing)=>{
@@ -1902,17 +2108,19 @@ export default function App() {
         if(isHost) connection.send({type:"STATE",...syncRef.current} satisfies SyncMessage)
         if(isHost) connection.send({type:"FRONT",participant:frontRef.current} satisfies SyncMessage)
         connection.send({type:"BEAUTY",strength:beautyRef.current} satisfies SyncMessage)
+        connection.send({type:"FILTER",participant:isHost?"p1":"p2",...filterRef.current} satisfies SyncMessage)
       })
       connection.on("data",raw=>{
         const message=raw as SyncMessage
         if(message.type==="STATE"){
-          setScreen(message.screen);setLayout(message.layout);setThemeId(message.themeId);setPropId(message.propId||"none")
+          setScreen(message.screen);setLayout(message.layout);setThemeId(message.themeId)
         }
         if(message.type==="BEAUTY") setPartnerSkinSmoothing(message.strength===2?2:message.strength===1?1:0)
+        if(message.type==="FILTER") setPartnerProp({propId:PROPS.some(prop=>prop.id===message.propId)?message.propId:"none",variant:Math.max(0,Math.min(4,Math.round(message.variant||0)))})
         if(message.type==="FRONT") setFrontParticipant(message.participant==="p2"?"p2":"p1")
         if(message.type==="CAPTURE") setCaptureAt(message.at)
       })
-      connection.on("close",()=>{ setPartnerJoined(false); setRemoteStream(null);setPartnerSkinSmoothing(0) })
+      connection.on("close",()=>{ setPartnerJoined(false); setRemoteStream(null);setPartnerSkinSmoothing(0);setPartnerProp({propId:"none",variant:0}) })
     }
 
     peer.on("open",()=>{ if(!isHost) attachData(peer.connect(hostId,{reliable:true})) })
@@ -2066,7 +2274,7 @@ export default function App() {
     dataRef.current?.close(); mediaRef.current?.close(); peerRef.current?.destroy()
     stream?.getTracks().forEach(track=>track.stop())
     setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle")
-    setRemoteStream(null); setCaptureAt(null); setStream(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setFrontParticipant("p1")
+    setRemoteStream(null); setCaptureAt(null); setStream(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setLocalProp({propId:"none",variant:0});setPartnerProp({propId:"none",variant:0});setFrontParticipant("p1")
     window.history.replaceState({},"",window.location.pathname)
     setScreen("landing")
   }
@@ -2090,7 +2298,7 @@ export default function App() {
         {screen==="landing"  && <LandingScreen onStart={startSession}/>} 
         {screen==="room"     && <RoomScreen code={roomCode} partnerJoined={partnerJoined} copied={copied} onCopy={handleCopy} onContinue={()=>navigate("layout")}/>} 
         {screen==="layout"   && <LayoutScreen selected={layout} onSelect={chooseLayout} onContinue={()=>navigate("theme")}/>} 
-        {screen==="theme"    && <ThemeScreen selected={themeId} selectedProp={propId} onSelect={chooseTheme} onPropSelect={chooseProp} onContinue={()=>navigate("ready")}/>}
+        {screen==="theme"    && <ThemeScreen selected={themeId} selectedProp={localProp.propId} onSelect={chooseTheme} onPropSelect={chooseProp} onContinue={()=>navigate("ready")}/>}
         {screen==="ready"&&(
           <GetReadyScreen
             stream={stream}
@@ -2103,7 +2311,8 @@ export default function App() {
         )}
         {screen==="booth"    && (
           <BoothScreen
-            stream={stream} remoteStream={remoteStream} themeId={themeId} propId={propId} skinSmoothing={skinSmoothing} partnerSkinSmoothing={partnerSkinSmoothing} frontParticipant={frontParticipant} localParticipant={isHost?"p1":"p2"} layout={layout} captureAt={captureAt}
+            stream={stream} remoteStream={remoteStream} themeId={themeId} localProp={localProp} partnerProp={partnerProp} skinSmoothing={skinSmoothing} partnerSkinSmoothing={partnerSkinSmoothing} frontParticipant={frontParticipant} localParticipant={isHost?"p1":"p2"} layout={layout} captureAt={captureAt}
+            onLocalPropChange={chooseProp}
             onFrontParticipantChange={chooseFrontParticipant}
             onCaptureRequest={requestCapture}
             onPhotoCapture={url=>setPhotos(p=>[...p,url])}
