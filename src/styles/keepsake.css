@@ -70,6 +70,9 @@ button, input, textarea { font: inherit; }
   min-height: 100vh;
 }
 
+.landing.screen-enter,
+.room.screen-enter { animation-duration: 200ms; }
+
 .landing {
   align-items: center;
   display: grid;
@@ -190,7 +193,7 @@ button, input, textarea { font: inherit; }
   .landing__prints {
     align-items: center;
     display: flex;
-    height: 245px;
+    height: 304px;
     justify-content: center;
     margin-bottom: 28px;
     min-height: 0;
@@ -203,7 +206,7 @@ button, input, textarea { font: inherit; }
 
 @media (max-width: 480px) {
   .landing { padding: 28px 20px 36px; overflow-x: clip; }
-  .landing__prints { position: relative; height: 210px; margin-bottom: 20px; }
+  .landing__prints { position: relative; height: 304px; margin-bottom: 20px; }
   .landing__content { position: relative; z-index: 2; width: 100%; }
   .landing__join-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px; }
   .landing__join-row .studio-button { padding: 0 10px; }

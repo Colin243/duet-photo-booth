@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { LandingScreen, RoomScreen } from './App'
+
+const keepsakeCss = readFileSync('src/styles/keepsake.css', 'utf8')
 
 describe('landing and room', () => {
   it('normalizes a six-character room code before joining', async () => {
@@ -29,5 +32,14 @@ describe('landing and room', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Partner connected')
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+  })
+
+  it('reserves the full mobile print composition at supported narrow breakpoints', () => {
+    expect(keepsakeCss).toMatch(/@media \(max-width: 767px\) \{[\s\S]*?\.landing__prints \{[\s\S]*?height: 304px;/)
+    expect(keepsakeCss).toMatch(/@media \(max-width: 480px\) \{[\s\S]*?\.landing__prints \{[\s\S]*?height: 304px;/)
+  })
+
+  it('keeps landing and room entrance motion within the approved duration', () => {
+    expect(keepsakeCss).toContain('.landing.screen-enter,\n.room.screen-enter { animation-duration: 200ms; }')
   })
 })
