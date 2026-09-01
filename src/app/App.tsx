@@ -7,7 +7,7 @@ import {
 import { downloadStrip } from "../lib/downloadStrip"
 import {
   Camera, Download, Share2, RotateCcw, Check, Copy, X,
-  Move, ChevronRight, ChevronLeft,
+  Move,
 } from "lucide-react"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,6 +174,39 @@ const PROP_LOOKS:({name:string;emoji:string}&PropLook)[]=[
   {propId:"catEars",variant:4,name:"XMM Doodle Cat",emoji:"▦"},
 ]
 
+function FilterSprite({look}:{look:PropLook}){
+  const pixel={shapeRendering:"crispEdges" as const}
+  if(look.propId==="glasses") return <svg viewBox="0 0 56 38" aria-hidden="true" style={{width:48,height:34}}>
+    <path d="M4 17c0-6 5-10 12-10s11 4 11 10-5 11-11 11S4 23 4 17Zm25 0c0-6 4-10 11-10s12 4 12 10-5 11-12 11-11-5-11-11Z" fill="rgba(190,239,247,.72)" stroke="#fff" strokeWidth="2.6"/>
+    <path d="M26 16h4M12 5c-3-4-8 1-3 5l3 3 3-3c5-4 0-9-3-5Zm32 0c-3-4-8 1-3 5l3 3 3-3c5-4 0-9-3-5Z" fill="#ff77ad" stroke="#fff" strokeWidth="1.2"/>
+  </svg>
+  if(look.propId==="partyHat") return <svg viewBox="0 0 56 38" aria-hidden="true" style={{width:48,height:34}}>
+    <ellipse cx="28" cy="21" rx="18" ry="7" fill="none" stroke="#ffd96a" strokeWidth="2" strokeDasharray="3 2"/>
+    <path d="m12 4 2.2 4.8L19 11l-4.8 2.1L12 18l-2.1-4.9L5 11l4.9-2.2L12 4Zm33 7 1.6 3.5L50 16l-3.4 1.5L45 21l-1.5-3.5L40 16l3.5-1.5L45 11Zm-17-9 1.4 3.1L33 6.5l-3.6 1.6L28 11l-1.4-2.9L23 6.5l3.6-1.4L28 2Z" fill="#fff7b8" stroke="#e8a84d" strokeWidth="1"/>
+  </svg>
+  if(look.propId==="catEars"&&look.variant===0) return <svg viewBox="0 0 56 38" aria-hidden="true" style={{width:48,height:34}} {...pixel}>
+    <path d="M7 16V3l12 8m30 5V3l-12 8" fill="#fff" stroke="#201824" strokeWidth="3"/>
+    <rect x="24" y="18" width="8" height="6" fill="#241c2a"/><rect x="26" y="24" width="4" height="4" fill="#241c2a"/>
+  </svg>
+  if(look.propId==="catEars"&&look.variant===1) return <svg viewBox="0 0 56 38" aria-hidden="true" style={{width:48,height:34}} {...pixel}>
+    <path d="M28 24c-8 9-23 7-24-3 7 5 13 1 18-5l6 5 6-5c5 6 11 10 18 5-1 10-16 12-24 3Z" fill="#17131e"/>
+    <path d="m39 4 6 4 6-4v12l-6-4-6 4Z" fill="#ff69a9"/><rect x="44" y="8" width="3" height="4" fill="#fff"/>
+  </svg>
+  if(look.propId==="catEars"&&look.variant===2) return <svg viewBox="0 0 56 38" aria-hidden="true" style={{width:48,height:34}} {...pixel}>
+    <rect x="4" y="10" width="20" height="14" fill="#201824"/><rect x="32" y="10" width="20" height="14" fill="#201824"/><rect x="24" y="14" width="8" height="5" fill="#201824"/>
+    <rect x="8" y="13" width="5" height="4" fill="#ff8fbd"/><rect x="36" y="13" width="5" height="4" fill="#ff8fbd"/><rect x="15" y="17" width="5" height="4" fill="#fff"/><rect x="43" y="17" width="5" height="4" fill="#fff"/>
+  </svg>
+  if(look.propId==="catEars"&&look.variant===3) return <svg viewBox="0 0 56 38" aria-hidden="true" style={{width:48,height:34}} {...pixel}>
+    <rect x="12" y="7" width="32" height="25" rx="7" fill="#d99a55" stroke="#6c452b" strokeWidth="2"/><rect x="16" y="3" width="9" height="9" fill="#b9773f"/><rect x="31" y="3" width="9" height="9" fill="#b9773f"/>
+    <rect x="20" y="15" width="4" height="4" fill="#241c2a"/><rect x="32" y="15" width="4" height="4" fill="#241c2a"/><rect x="25" y="21" width="6" height="5" fill="#fff1d5"/><rect x="27" y="21" width="3" height="3" fill="#241c2a"/>
+  </svg>
+  return <svg viewBox="0 0 56 38" aria-hidden="true" style={{width:48,height:34}} {...pixel}>
+    <path d="M8 16 13 4l10 8m25 4L43 4l-10 8" fill="#cab3ff" stroke="#2a2030" strokeWidth="3"/>
+    <rect x="20" y="18" width="4" height="4" fill="#2a2030"/><rect x="32" y="18" width="4" height="4" fill="#2a2030"/><rect x="26" y="23" width="5" height="4" fill="#ff8fbd"/>
+    <path d="M16 25H5m11 4H8m32-4h11m-11 4h8" stroke="#2a2030" strokeWidth="2"/>
+  </svg>
+}
+
 const THEME_IMAGE_PATHS:Partial<Record<ThemeId,string>>={
   washer:"/theme-assets/laundromat-neutral-blue-v3.png",
   elevator:"/theme-assets/elevator-cctv-cute.jpg",
@@ -194,7 +227,11 @@ async function createLocalDemoStream(participant:ParticipantId,poseSet="full",mo
     const phase=(performance.now()/900)+(participant==="p2"?Math.PI:0)
     const dx=moving?Math.sin(phase)*72:0,dy=moving?Math.cos(phase*.8)*18:0
     const angle=moving?Math.sin(phase*.65)*.022:0
-    ctx.save();ctx.translate(canvas.width/2+dx,canvas.height/2+dy);ctx.rotate(angle);ctx.scale(scaleFactor,scaleFactor)
+    // Keep synthetic close-up trials inside their source camera frame. Scaling
+    // around the exact center used to cut off the model's hair before vision
+    // processing, creating a false rectangular "mask" edge in QA captures.
+    const headroomOffset=Math.max(0,scaleFactor-1)*canvas.height*.36
+    ctx.save();ctx.translate(canvas.width/2+dx,canvas.height/2+dy+headroomOffset);ctx.rotate(angle);ctx.scale(scaleFactor,scaleFactor)
     ctx.drawImage(image,-canvas.width/2,-canvas.height/2,canvas.width,canvas.height);ctx.restore()
   }
   draw()
@@ -831,7 +868,15 @@ function drawPersonCutout(
   if(scratch.height!==ctx.canvas.height) scratch.height=ctx.canvas.height
   const work=scratch.getContext("2d")!
   work.clearRect(0,0,scratch.width,scratch.height)
-  const tracked=personBounds||{x:.08,y:.02,width:.84,height:.98}
+  const baseTracked=personBounds||{x:.08,y:.02,width:.84,height:.98}
+  // Expand a crop that nearly reaches a camera boundary all the way to that
+  // boundary. This keeps clipped clothing and arms extending naturally out of
+  // frame without shifting the normalized face position afterward.
+  const tracked={...baseTracked}
+  if(tracked.y<.07){ tracked.height+=tracked.y;tracked.y=0 }
+  if(tracked.y+tracked.height>.9) tracked.height=1-tracked.y
+  if(tracked.x<.055){ tracked.width+=tracked.x;tracked.x=0 }
+  if(tracked.x+tracked.width>.93) tracked.width=1-tracked.x
   const sourceW=video instanceof HTMLVideoElement?video.videoWidth:video.width
   const sourceH=video instanceof HTMLVideoElement?video.videoHeight:video.height
   const sx=tracked.x*sourceW, sy=tracked.y*sourceH
@@ -840,11 +885,15 @@ function drawPersonCutout(
   const {leftEye,rightEye,forehead,chin}=faceAnchors(face,pose)
   const faceSizePixels=measuredFaceSize(face,pose,sourceW,sourceH)
   const safeParticipantScale=Math.max(.8,Math.min(1.2,participantScale))
-  const rawNormalizedScale=(faceSizePixels>8?(height*.245)/faceSizePixels:fitScale)*safeParticipantScale
+  // Stage 1: normalize every participant to the same shared face target.
+  // Stage 2: apply that participant's optional personal size preference.
+  const rawBaselineScale=faceSizePixels>8?(height*.245)/faceSizePixels:fitScale
+  const baselineScale=Math.max(fitScale*.3,Math.min(fitScale*2.8,rawBaselineScale))
+  const requestedScale=baselineScale*safeParticipantScale
   // Allow enough range to normalize genuinely different webcam distances.
   // Temporal bounds below prevent this wider spatial range from becoming a
   // sudden zoom when landmarks briefly wobble.
-  const targetScale=Math.max(fitScale*.3,Math.min(fitScale*2.8,rawNormalizedScale))
+  const targetScale=Math.max(fitScale*.24,Math.min(fitScale*3.36,requestedScale))
   const now=performance.now()
   const previousScale=scaleStateRef.current
   let scale=targetScale
@@ -874,6 +923,49 @@ function drawPersonCutout(
     tracked.height*mask.height,
     drawX,drawY,drawW,drawH
   )
+  if(captureQuality){
+    // Saved photos can afford a more deliberate matte pass than the live
+    // preview. Compress low-confidence alpha to zero and strengthen the
+    // interior so webcam-wall haze disappears without hard-cutting hair.
+    const cleanX=Math.max(0,Math.floor(drawX-2)),cleanY=Math.max(0,Math.floor(drawY-2))
+    const cleanRight=Math.min(work.canvas.width,Math.ceil(drawX+drawW+2))
+    const cleanBottom=Math.min(work.canvas.height,Math.ceil(drawY+drawH+2))
+    const cleanWidth=Math.max(0,cleanRight-cleanX),cleanHeight=Math.max(0,cleanBottom-cleanY)
+    if(cleanWidth&&cleanHeight){
+      const image=work.getImageData(cleanX,cleanY,cleanWidth,cleanHeight)
+      const sourceAlpha=new Uint8ClampedArray(cleanWidth*cleanHeight)
+      for(let pixel=0;pixel<sourceAlpha.length;pixel++) sourceAlpha[pixel]=image.data[pixel*4+3]
+      for(let yPixel=0;yPixel<cleanHeight;yPixel++) for(let xPixel=0;xPixel<cleanWidth;xPixel++){
+        const pixel=yPixel*cleanWidth+xPixel,index=pixel*4+3
+        const alpha=sourceAlpha[pixel]
+        let neighborMin=alpha
+        if(xPixel>0) neighborMin=Math.min(neighborMin,sourceAlpha[pixel-1])
+        if(xPixel<cleanWidth-1) neighborMin=Math.min(neighborMin,sourceAlpha[pixel+1])
+        if(yPixel>0) neighborMin=Math.min(neighborMin,sourceAlpha[pixel-cleanWidth])
+        if(yPixel<cleanHeight-1) neighborMin=Math.min(neighborMin,sourceAlpha[pixel+cleanWidth])
+        // A light one-pixel contraction removes background-colored fringe at
+        // enlarged capture resolution while leaving opaque interiors intact.
+        let contracted=alpha>=238?alpha:Math.round(alpha*.88+neighborMin*.12)
+        // When a real camera edge lands inside the final composition, taper
+        // the matte over a few capture pixels instead of showing a rectangular
+        // torso/arm cutoff. Face placement remains unchanged.
+        const canvasX=cleanX+xPixel,canvasY=cleanY+yPixel,fadeDistance=18
+        let boundaryCoverage=1
+        if(tracked.y<=.005&&drawY>1) boundaryCoverage=Math.min(boundaryCoverage,(canvasY-drawY)/fadeDistance)
+        if(tracked.y+tracked.height>=.995&&drawY+drawH<work.canvas.height-1) boundaryCoverage=Math.min(boundaryCoverage,(drawY+drawH-canvasY)/fadeDistance)
+        if(tracked.x<=.005&&drawX>1) boundaryCoverage=Math.min(boundaryCoverage,(canvasX-drawX)/fadeDistance)
+        if(tracked.x+tracked.width>=.995&&drawX+drawW<work.canvas.width-1) boundaryCoverage=Math.min(boundaryCoverage,(drawX+drawW-canvasX)/fadeDistance)
+        const boundedCoverage=Math.max(0,Math.min(1,boundaryCoverage))
+        const softenedCoverage=boundedCoverage*boundedCoverage*(3-2*boundedCoverage)
+        contracted=Math.round(contracted*softenedCoverage)
+        if(contracted<=30){ image.data[index]=0;continue }
+        const normalized=(contracted-30)/225
+        const tightened=normalized*normalized*(3-2*normalized)
+        image.data[index]=Math.round(Math.min(1,tightened*1.1)*255)
+      }
+      work.putImageData(image,cleanX,cleanY)
+    }
+  }
   work.globalCompositeOperation="source-over"
 
   ctx.save()
@@ -1391,19 +1483,19 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
   const [photos, setPhotos]     = useState<string[]>([])
   const [countdown, setCountdown] = useState<number|null>(null)
   const [flashing, setFlashing]   = useState(false)
-  const [proximity, setProximity] = useState(()=>import.meta.env.DEV&&new URLSearchParams(window.location.search).get("demoOverlap")==="1"?100:50)
+  const [proximity, setProximity] = useState(()=>{
+    if(!import.meta.env.DEV) return 50
+    const params=new URLSearchParams(window.location.search)
+    const requested=Number(params.get("demoProximity"))
+    if(Number.isFinite(requested)&&params.has("demoProximity")) return Math.max(0,Math.min(100,requested))
+    return params.get("demoOverlap")==="1"?100:50
+  })
   const [poked, setPoked]         = useState(false)
   const [segmentStatus,setSegmentStatus]=useState<"loading"|"ready"|"error">("loading")
   const [localMaskReady,setLocalMaskReady]=useState(false)
   const [partnerMaskReady,setPartnerMaskReady]=useState(false)
   const localMaskReadyRef=useRef(false)
   const partnerMaskReadyRef=useRef(false)
-  const lastActiveLookRef=useRef<PropLook>(localProp.propId==="none"?{propId:"glasses",variant:0}:localProp)
-
-  useEffect(()=>{
-    if(localProp.propId!=="none") lastActiveLookRef.current=localProp
-  },[localProp])
-
   const theme  = THEMES.find(t=>t.id===themeId)!
   const isDark = theme.dark
   const MAX    = 10
@@ -1540,8 +1632,12 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
         if(y>0) neighborMin=Math.min(neighborMin,matteAlpha[i-width])
         if(y<height-1) neighborMin=Math.min(neighborMin,matteAlpha[i+width])
         const refined=Math.round(center*.66+neighborMin*.34)
+        // Tiny non-zero background probabilities can reveal the rectangular
+        // webcam crop after compositing. Remove only that near-transparent
+        // haze here; meaningful hair and finger coverage remains untouched.
+        const cleaned=refined<18?0:refined
         pixels[p]=pixels[p+1]=pixels[p+2]=255
-        pixels[p+3]=refined
+        pixels[p+3]=cleaned
       }
       maskCanvas.getContext("2d")!.putImageData(new ImageData(pixels,width,height),0,0)
       boundsRef.current=boundsFromTracking(poseRef.current,hands,boundsRef.current,pixels,width,height)
@@ -1653,13 +1749,6 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
   const sub  = isDark?"rgba(255,255,255,0.45)":"#9B7B90"
   const acc  = isDark?theme.accent:"#C85B82"
   const localScalePercent=Math.round(localParticipantScale*100)
-  const activeLookIndex=PROP_LOOKS.findIndex(look=>look.propId===localProp.propId&&look.variant===localProp.variant)
-  const activeLook=activeLookIndex>=0?PROP_LOOKS[activeLookIndex]:null
-  const cycleLocalFilter=(direction:-1|1)=>{
-    const current=activeLookIndex>=0?activeLookIndex:direction>0?-1:0
-    const next=(current+direction+PROP_LOOKS.length)%PROP_LOOKS.length
-    onLocalPropChange({propId:PROP_LOOKS[next].propId,variant:PROP_LOOKS[next].variant})
-  }
 
   return (
     <div style={{ minHeight:"100vh", background:bg, display:"flex", flexDirection:"column", fontFamily:"'Nunito',sans-serif", position:"relative", overflowX:"hidden", overflowY:"auto" }}>
@@ -1731,13 +1820,20 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
           </button>
         </div>
 
-        <div style={{ display:"flex",alignItems:"center",gap:7,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(200,91,130,.16)"}`,borderRadius:50,padding:"6px 7px 6px 13px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.06)" }}>
-          <span style={{ fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",marginRight:1 }}>YOUR FILTER</span>
-          <button onClick={()=>cycleLocalFilter(-1)} aria-label="Previous filter" style={{ width:30,height:30,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.15)":"#E7D9E2"}`,background:"transparent",color:fg,cursor:"pointer",display:"grid",placeItems:"center" }}><ChevronLeft size={14}/></button>
-          <button onClick={()=>onLocalPropChange(activeLook?{propId:"none",variant:0}:lastActiveLookRef.current)} aria-pressed={Boolean(activeLook)} style={{ minWidth:142,height:34,borderRadius:20,border:`1px solid ${activeLook?acc:isDark?"rgba(255,255,255,.14)":"#E7D9E2"}`,background:activeLook?acc:"transparent",color:activeLook?"#fff":fg,fontFamily:"'Nunito',sans-serif",fontSize:11,fontWeight:900,cursor:"pointer",padding:"0 12px" }}>
-            {activeLook?`${activeLook.emoji}  ${activeLook.name}`:"○  Filter off"}
+        <div style={{ width:"min(100%,620px)",display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"wrap",gap:7,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(200,91,130,.16)"}`,borderRadius:22,padding:"9px 10px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.06)" }}>
+          <span style={{ width:"100%",textAlign:"center",fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",marginBottom:1 }}>YOUR FILTER · TAP A SPRITE</span>
+          <button onClick={()=>onLocalPropChange({propId:"none",variant:0})} aria-label="Remove filter" title="Remove filter" aria-pressed={localProp.propId==="none"} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${localProp.propId==="none"?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:localProp.propId==="none"?`${acc}18`:"transparent",color:localProp.propId==="none"?acc:sub,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:localProp.propId==="none"?`0 5px 14px ${acc}25`:"none" }}>
+            <X size={20} strokeWidth={2.7}/>
           </button>
-          <button onClick={()=>cycleLocalFilter(1)} aria-label="Next filter" style={{ width:30,height:30,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.15)":"#E7D9E2"}`,background:"transparent",color:fg,cursor:"pointer",display:"grid",placeItems:"center" }}><ChevronRight size={14}/></button>
+          {PROP_LOOKS.map(look=>{
+            const selected=look.propId===localProp.propId&&look.variant===localProp.variant
+            return <button key={`${look.propId}-${look.variant}`} onClick={()=>onLocalPropChange({propId:look.propId,variant:look.variant})} aria-label={look.name} title={look.name} aria-pressed={selected} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${selected?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:selected?`${acc}18`:isDark?"rgba(255,255,255,.025)":"#fff",color:fg,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:selected?`0 5px 14px ${acc}28`:"none",transform:selected?"translateY(-2px)":"none",transition:"transform .16s ease,border-color .16s ease,box-shadow .16s ease" }}>
+              <FilterSprite look={look}/>
+              {selected&&(
+                <span style={{ position:"absolute",right:4,top:4,width:7,height:7,borderRadius:"50%",background:acc,boxShadow:"0 0 0 2px #fff" }}/>
+              )}
+            </button>
+          })}
         </div>
 
         <div style={{ display:"flex",alignItems:"center",gap:8,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.86)",border:`1px solid ${isDark?"rgba(255,255,255,.09)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 9px 7px 14px",backdropFilter:"blur(12px)" }}>
@@ -2274,6 +2370,8 @@ export default function App() {
     const demoPose=new URLSearchParams(window.location.search).get("demoPose")
     if(import.meta.env.DEV&&demoPose) params.set("demoPose",demoPose)
     if(import.meta.env.DEV&&new URLSearchParams(window.location.search).get("demoOverlap")==="1") params.set("demoOverlap","1")
+    const demoProximity=new URLSearchParams(window.location.search).get("demoProximity")
+    if(import.meta.env.DEV&&demoProximity) params.set("demoProximity",demoProximity)
     if(import.meta.env.DEV&&new URLSearchParams(window.location.search).get("demoMotion")==="1") params.set("demoMotion","1")
     const demoScale=new URLSearchParams(window.location.search).get("demoScale")
     if(import.meta.env.DEV&&demoScale) params.set("demoScale",demoScale)
