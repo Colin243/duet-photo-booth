@@ -217,7 +217,15 @@ const themeImageCache=new Map<string,HTMLImageElement>()
 async function createLocalDemoStream(participant:ParticipantId,poseSet="full",moving=false,scaleFactor=1):Promise<MediaStream>{
   const image=new Image()
   image.decoding="async"
-  image.src=poseSet==="upper"?`/local-demo/${participant}-upper.png`:`/local-demo/${participant}.png`
+  image.src=poseSet==="washerInward"
+    ? `/local-demo/${participant}-washer-inward-v4.png`
+    : poseSet==="washerPeek"
+    ? `/local-demo/${participant}-washer-peek-v3.png`
+    : poseSet==="washer"
+      ? `/local-demo/${participant}-washer-peering.png`
+    : poseSet==="upper"
+      ? `/local-demo/${participant}-upper.png`
+      : `/local-demo/${participant}.png`
   await image.decode()
   const canvas=document.createElement("canvas")
   canvas.width=1280;canvas.height=720
@@ -232,6 +240,9 @@ async function createLocalDemoStream(participant:ParticipantId,poseSet="full",mo
     // processing, creating a false rectangular "mask" edge in QA captures.
     const headroomOffset=Math.max(0,scaleFactor-1)*canvas.height*.36
     ctx.save();ctx.translate(canvas.width/2+dx,canvas.height/2+dy+headroomOffset);ctx.rotate(angle);ctx.scale(scaleFactor,scaleFactor)
+    // P1's generated three-quarter pose needs one preview-only pre-flip so
+    // the booth's normal webcam mirroring turns both people toward center.
+    if(poseSet==="washerInward"&&participant==="p1") ctx.scale(-1,1)
     ctx.drawImage(image,-canvas.width/2,-canvas.height/2,canvas.width,canvas.height);ctx.restore()
   }
   draw()
@@ -583,9 +594,12 @@ function renderLandmarkSupport(
 
   // Hand Landmarker provides 21 points per hand. Fill the palm and connect all
   // finger bones, then union the soft result into the body matte.
-  ctx.strokeStyle="rgba(255,255,255,.9)"
-  ctx.fillStyle="rgba(255,255,255,.86)"
-  ctx.lineWidth=Math.max(3,supportCanvas.width*.009)
+  // Keep this support slightly inside the visible finger silhouette. A wide,
+  // nearly opaque skeleton preserves motion but can also retain a pale strip of
+  // background around an open hand in the final cutout.
+  ctx.strokeStyle="rgba(255,255,255,.74)"
+  ctx.fillStyle="rgba(255,255,255,.7)"
+  ctx.lineWidth=Math.max(2,supportCanvas.width*.0065)
   hands.forEach(hand=>{
     const palm=[0,5,9,13,17].map(index=>hand[index]).filter(Boolean)
     if(palm.length===5){
@@ -601,7 +615,7 @@ function renderLandmarkSupport(
     })
     hand.forEach(landmark=>{
       const p=point(landmark)
-      ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(2.5,supportCanvas.width*.006),0,Math.PI*2); ctx.fill()
+      ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(1.8,supportCanvas.width*.0045),0,Math.PI*2); ctx.fill()
     })
   })
   ctx.restore()
@@ -911,7 +925,13 @@ function drawPersonCutout(
   const drawW=sw*scale, drawH=sh*scale
   const faceCenterX=leftEye&&rightEye?(leftEye.x+rightEye.x)/2:(tracked.x+tracked.width/2)
   const faceCenterY=forehead&&chin?(forehead.y+chin.y)/2:leftEye&&rightEye?(leftEye.y+rightEye.y)/2:tracked.y+tracked.height*.25
-  const drawX=x+width/2-(faceCenterX*sourceW-sx)*scale
+  const faceOffsetX=(faceCenterX*sourceW-sx)*scale
+  // The displayed webcam is mirrored. Center against the landmark's mirrored
+  // destination coordinate so angled/off-center faces do not jump toward the
+  // outside edge of their booth slot.
+  const drawX=mirrored
+    ? x+width/2-drawW+faceOffsetX
+    : x+width/2-faceOffsetX
   const drawY=y+height*.27-(faceCenterY*sourceH-sy)*scale
   work.drawImage(video,sx,sy,sw,sh,drawX,drawY,drawW,drawH)
   work.globalCompositeOperation="destination-in"
@@ -1484,11 +1504,14 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
   const [countdown, setCountdown] = useState<number|null>(null)
   const [flashing, setFlashing]   = useState(false)
   const [proximity, setProximity] = useState(()=>{
-    if(!import.meta.env.DEV) return 50
+    // The circular drum already pulls both faces toward the visual center.
+    // Start it wider so two people can peek in without covering each other;
+    // the shared closeness control can still bring them together on purpose.
+    if(!import.meta.env.DEV) return themeId==="washer"?25:50
     const params=new URLSearchParams(window.location.search)
     const requested=Number(params.get("demoProximity"))
     if(Number.isFinite(requested)&&params.has("demoProximity")) return Math.max(0,Math.min(100,requested))
-    return params.get("demoOverlap")==="1"?100:50
+    return params.get("demoOverlap")==="1"?100:themeId==="washer"?25:50
   })
   const [poked, setPoked]         = useState(false)
   const [segmentStatus,setSegmentStatus]=useState<"loading"|"ready"|"error">("loading")
