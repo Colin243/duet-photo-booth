@@ -7,8 +7,9 @@ import {
 import { downloadStrip } from "../lib/downloadStrip"
 import {
   Camera, Download, Share2, RotateCcw, Check, Copy, X,
-  Move,
+  Move, ShieldCheck,
 } from "lucide-react"
+import { BrandMark, StatusPanel, StudioButton } from "./ui/StudioUI"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL CSS
@@ -1113,7 +1114,7 @@ function SampleStrip({
 // LANDING SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function LandingScreen({ onStart }:{ onStart:(roomCode?:string)=>void }) {
+export function LandingScreen({ onStart }:{ onStart:(roomCode?:string)=>void }) {
   const [joinCode, setJoinCode] = useState("")
 
   const s1=["linear-gradient(135deg,#fce4ec,#e1bee7)","linear-gradient(135deg,#e8f5e9,#b2ebf2)","linear-gradient(135deg,#fff9c4,#ffccbc)","linear-gradient(135deg,#f3e5f5,#fce4ec)"]
@@ -1121,95 +1122,38 @@ function LandingScreen({ onStart }:{ onStart:(roomCode?:string)=>void }) {
   const s3=["linear-gradient(135deg,#fce4ec,#fff9c4)","linear-gradient(135deg,#e3f2fd,#e1bee7)","linear-gradient(135deg,#f3e5f5,#fce4ec)","linear-gradient(135deg,#fff8e1,#e8f5e9)","linear-gradient(135deg,#e3f2fd,#bbdefb)","linear-gradient(135deg,#fce4ec,#f3e5f5)"]
 
   return (
-    <div style={{ position:"relative", minHeight:"100vh", overflow:"hidden", display:"flex", background:"#F7F1E7", fontFamily:"'Nunito',sans-serif" }}>
-      <div className="grain-overlay" />
-
-      {/* Floating strips — desktop */}
-      <div style={{ position:"absolute", inset:0, pointerEvents:"none" }} className="md-strips">
-        <div style={{ position:"absolute", left:"4%", top:"14%", "--rot":"-9deg" } as React.CSSProperties & Record<string,string>}>
-          <SampleStrip gradients={s1} label="이지연 & 민준" date="2024.12.24" style={{ transform:"rotate(-9deg)", animation:"float 6s ease-in-out infinite" }} />
-        </div>
-        <div style={{ position:"absolute", left:"14%", top:"54%", "--rot":"5deg" } as React.CSSProperties & Record<string,string>}>
-          <SampleStrip gradients={s2} label="Yuna & Kai" date="2025.01.14" style={{ transform:"rotate(5deg)", animation:"float 7.5s ease-in-out -2s infinite" }} />
-        </div>
-        <div style={{ position:"absolute", left:"2%", top:"74%", "--rot":"-4deg" } as React.CSSProperties & Record<string,string>}>
-          <SampleStrip gradients={s3} label="Sora & Ren" date="2025.02.14" wide style={{ transform:"rotate(-4deg)", animation:"float 8s ease-in-out -4s infinite" }} />
-        </div>
+    <main className="landing screen-enter">
+      <div className="landing__prints" aria-hidden="true">
+        <SampleStrip gradients={s1} label="Mina & Jules" date="09.01.26" style={{ transform:"rotate(-7deg)" }} />
+        <SampleStrip gradients={s2} label="Yuna & Kai" date="09.01.26" style={{ transform:"rotate(5deg)" }} />
+        <SampleStrip gradients={s3} label="Sora & Ren" date="09.01.26" wide style={{ transform:"rotate(-3deg)" }} />
       </div>
-
-      {/* Petal accents */}
-      <div style={{ position:"absolute", top:32, right:48, fontSize:76, opacity:.13, pointerEvents:"none", animation:"float 5s ease-in-out infinite" }}>🌸</div>
-      <div style={{ position:"absolute", bottom:80, right:24, fontSize:60, opacity:.09, pointerEvents:"none", animation:"float 7s ease-in-out -3s infinite" }}>✨</div>
-      <div style={{ position:"absolute", top:"45%", right:"38%", fontSize:40, opacity:.07, pointerEvents:"none", animation:"float 9s ease-in-out -5s infinite" }}>💕</div>
-
-      {/* Content */}
-      <div style={{ position:"relative", zIndex:10, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", width:"100%", padding:"40px 24px" }}>
-
-        {/* Left strips (always-visible layout aid, faded on mobile) */}
-        <div style={{ display:"flex", gap:32, alignItems:"center", justifyContent:"center", width:"100%", maxWidth:980, flexWrap:"wrap" }}>
-
-          {/* Strip showcase — hidden on small mobile, shown md+ */}
-          <div style={{ display:"flex", gap:16, alignItems:"flex-end", opacity:.95 }}>
-            <SampleStrip gradients={s1} label="이지연 & 민준" date="2024.12.24" style={{ transform:"rotate(-7deg)", animation:"float 6s ease-in-out infinite", marginBottom:16 }} />
-            <SampleStrip gradients={s2} label="Yuna & Kai" date="2025.01.14" style={{ transform:"rotate(4deg)", animation:"float 7.5s ease-in-out -2s infinite" }} />
-            <SampleStrip gradients={s3} label="Sora & Ren" date="2025.02.14" wide style={{ transform:"rotate(-3deg)", animation:"float 8.5s ease-in-out -4.5s infinite", marginBottom:8 }} />
-          </div>
-
-          {/* Main copy & CTA */}
-          <div style={{ maxWidth:400, display:"flex", flexDirection:"column", alignItems:"flex-start", gap:0 }}>
-
-            {/* Logo */}
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:24 }}>
-              <div style={{ width:40, height:40, borderRadius:"50%", background:"#EE6D8D", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:19, boxShadow:"0 4px 18px rgba(238,109,141,0.28)" }}>♡</div>
-              <span style={{ fontFamily:"'Nunito',sans-serif", fontWeight:800, fontSize:21, color:"#2D1B2E", letterSpacing:"-0.03em" }}>duet</span>
+      <section className="landing__content" aria-labelledby="landing-title">
+        <BrandMark />
+        <p className="landing__eyebrow">A private photo booth for two</p>
+        <h1 id="landing-title">Step into the booth, <em>together.</em></h1>
+        <p className="landing__intro">A little photo booth on the internet for you and your favorite person, wherever you both are.</p>
+        <div className="landing__actions">
+          <StudioButton block onClick={()=>onStart()}>Start a booth</StudioButton>
+          <div className="landing__join">
+            <label htmlFor="room-code">Room code</label>
+            <div className="landing__join-row">
+              <input
+                id="room-code"
+                type="text"
+                placeholder="ABC123"
+                value={joinCode}
+                onChange={e=>setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""))}
+                maxLength={6}
+                autoComplete="off"
+              />
+              <StudioButton tone="secondary" onClick={()=>joinCode.length===6&&onStart(joinCode)} disabled={joinCode.length!==6}>Join room</StudioButton>
             </div>
-
-            <h1 style={{ fontFamily:"'DM Serif Display',serif", fontSize:"clamp(2.1rem,5vw,3.4rem)", lineHeight:1.1, color:"#2D1B2E", marginBottom:16, margin:"0 0 16px 0" }}>
-              Step into the<br />booth,{" "}
-              <em style={{ color:"#C85B82", fontStyle:"italic" }}>together.</em>
-            </h1>
-
-            <p style={{ fontSize:15.5, color:"#9B7B90", lineHeight:1.72, marginBottom:32, margin:"0 0 32px 0" }}>
-              A little photo booth on the internet for you and your favorite person—wherever you both are.
-            </p>
-
-            {/* CTAs */}
-            <div style={{ display:"flex", flexDirection:"column", gap:12, width:"100%" }}>
-              <button
-                onClick={()=>onStart()}
-                style={{ padding:"15px 24px", borderRadius:50, background:"#2449D8", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 8px 26px rgba(36,73,216,0.26)", transition:"all 0.2s", letterSpacing:"0.02em" }}
-                onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 12px 34px rgba(36,73,216,0.34)"}}
-                onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="0 8px 26px rgba(36,73,216,0.26)"}}
-              >
-                Start a booth  →
-              </button>
-
-              <div style={{ display:"flex", gap:8 }}>
-                <input
-                  type="text" placeholder="Enter room code"
-                  value={joinCode}
-                  onChange={e=>setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""))}
-                  maxLength={6}
-                  style={{ flex:1, padding:"13px 16px", borderRadius:13, border:"1.5px solid rgba(200,91,130,0.25)", background:"rgba(255,255,255,0.82)", fontFamily:"'Nunito',sans-serif", fontSize:15, textAlign:"center", letterSpacing:"0.24em", color:"#2D1B2E", outline:"none", backdropFilter:"blur(8px)" }}
-                />
-                <button
-                  onClick={()=>joinCode.length===6&&onStart(joinCode)}
-                  disabled={joinCode.length!==6}
-                  style={{ padding:"13px 20px", borderRadius:13, border:"1.5px solid rgba(200,91,130,0.35)", background:"rgba(255,255,255,0.82)", color:"#C85B82", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:14, cursor:"pointer", backdropFilter:"blur(8px)", whiteSpace:"nowrap", transition:"all 0.2s" }}
-                >
-                  Join
-                </button>
-              </div>
-            </div>
-
-            <p style={{ marginTop:22, fontSize:12, color:"#ccc", display:"flex", alignItems:"center", gap:6 }}>
-              <span>🔒</span>
-              <span>Your photos belong to you. We never permanently store them.</span>
-            </p>
           </div>
         </div>
-      </div>
-    </div>
+        <p className="landing__privacy"><ShieldCheck aria-hidden="true" />Camera and photos stay between your browsers. Nothing is uploaded.</p>
+      </section>
+    </main>
   )
 }
 
@@ -1217,46 +1161,30 @@ function LandingScreen({ onStart }:{ onStart:(roomCode?:string)=>void }) {
 // ROOM SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RoomScreen({ code, partnerJoined, copied, onCopy, onContinue }:{
+export function RoomScreen({ code, partnerJoined, copied, onCopy, onContinue }:{
   code:string; partnerJoined:boolean; copied:boolean; onCopy:()=>void; onContinue:()=>void
 }) {
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 24px", background:"linear-gradient(160deg,#FDF2F8,#FDF7F2)", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden" }}>
-      <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:460, textAlign:"center" }}>
-        <div style={{ fontSize:46, marginBottom:16, animation:"heartbeat 2s ease infinite" }}>🔗</div>
-        <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:32, color:"#2D1B2E", marginBottom:8 }}>Your Booth Room</h2>
-        <p style={{ color:"#9B7B90", marginBottom:36, fontSize:15 }}>Share this code with your partner to connect</p>
-
-        <div style={{ background:"#fff", borderRadius:22, padding:"32px 28px", boxShadow:"0 4px 36px rgba(200,91,130,0.10)", marginBottom:20 }}>
-          <p style={{ fontSize:10, letterSpacing:"0.22em", color:"#ccc", marginBottom:14, fontWeight:700 }}>ROOM CODE</p>
-          <div style={{ fontSize:50, fontWeight:800, letterSpacing:"0.3em", color:"#2D1B2E", fontFamily:"'Nunito',sans-serif", marginBottom:22, lineHeight:1 }}>{code}</div>
-          <button
-            onClick={onCopy}
-            style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"10px 22px", borderRadius:12, border:"1.5px solid rgba(200,91,130,0.28)", background:copied?"#F5E6F0":"transparent", color:"#C85B82", fontFamily:"'Nunito',sans-serif", fontSize:14, fontWeight:600, cursor:"pointer", transition:"all 0.2s" }}
-          >
-            {copied?<><Check size={14}/>Copied!</>:<><Copy size={14}/>Copy invite link</>}
-          </button>
+    <main className="room screen-enter">
+      <section className="room__content" aria-labelledby="room-title">
+        <BrandMark compact />
+        <p className="room__eyebrow">Private room</p>
+        <h1 id="room-title">Your booth room</h1>
+        <p className="room__intro">Share this code with your partner to connect your two browsers.</p>
+        <div className="room__code-card">
+          <p>Room code</p>
+          <strong>{code}</strong>
+          <StudioButton tone="secondary" onClick={onCopy}>
+            {copied?<><Check aria-hidden="true" />Copied invite</>:<><Copy aria-hidden="true" />Copy invite link</>}
+          </StudioButton>
         </div>
-
-        {/* Partner status */}
-        <div style={{ display:"flex", alignItems:"center", gap:12, background:partnerJoined?"rgba(200,91,130,0.07)":"rgba(0,0,0,0.04)", borderRadius:14, padding:"14px 22px", marginBottom:28, border:`1.5px solid ${partnerJoined?"rgba(200,91,130,0.22)":"rgba(0,0,0,0.07)"}`, transition:"all 0.5s" }}>
-          <div style={{ width:10, height:10, borderRadius:"50%", background:partnerJoined?"#C85B82":"#ddd", boxShadow:partnerJoined?"0 0 0 3px rgba(200,91,130,0.22)":"none", transition:"all 0.4s", flexShrink:0 }} />
-          <span style={{ fontSize:14, color:partnerJoined?"#C85B82":"#9B7B90", fontWeight:600 }}>
-            {partnerJoined?"✓ Partner connected — ready to go!":"Waiting for your partner to join…"}
-          </span>
-          {!partnerJoined&&<div style={{ marginLeft:"auto", display:"flex", gap:4 }}>{[0,1,2].map(i=><div key={i} style={{ width:6, height:6, borderRadius:"50%", background:"#C85B82", animation:`blink 1.2s ease ${i*.22}s infinite` }}/>)}</div>}
-        </div>
-
-        <button
-          onClick={onContinue}
-          disabled={!partnerJoined}
-          style={{ width:"100%", padding:"15px", borderRadius:16, background:partnerJoined?"linear-gradient(135deg,#C85B82,#BFA3D4)":"#e8e8e8", color:partnerJoined?"#fff":"#bbb", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:partnerJoined?"pointer":"not-allowed", boxShadow:partnerJoined?"0 6px 24px rgba(200,91,130,0.35)":"none", transition:"all 0.3s" }}
-        >
-          Continue →
-        </button>
-      </div>
-    </div>
+        <StatusPanel tone={partnerJoined ? 'success' : 'info'} title={partnerJoined ? 'Partner connected' : 'Waiting for your partner'}>
+          {partnerJoined ? 'You can choose the booth together.' : 'Keep this tab open while they join.'}
+        </StatusPanel>
+        <p className="room__privacy"><ShieldCheck aria-hidden="true" />Your room is peer-to-peer. Camera and photo data stay between your browsers.</p>
+        <StudioButton block onClick={onContinue} disabled={!partnerJoined}>Continue</StudioButton>
+      </section>
+    </main>
   )
 }
 
