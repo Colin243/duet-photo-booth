@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import App, { type AppLifecycleTestHandle, type CameraLifecycleTestHandle, CustomizeScreen, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RevealScreen, RoomScreen, SelectScreen, ThemeScreen } from './App'
+import { downloadStrip } from '../lib/downloadStrip'
 
 const peerEvents = vi.hoisted(() => ({
   destroys: [] as string[],
@@ -36,6 +37,10 @@ vi.mock('peerjs', () => {
     },
   }
 })
+
+vi.mock('../lib/downloadStrip', () => ({
+  downloadStrip: vi.fn(),
+}))
 
 const keepsakeCss = readFileSync('src/styles/keepsake.css', 'utf8')
 const appSource = readFileSync('src/app/App.tsx', 'utf8')
@@ -112,6 +117,16 @@ describe('strip customization', () => {
       date: 'Sep 2, 2026',
       offsets: {},
     })
+  })
+
+  it('gives placed sticker controls a transparent 44px hit area without changing the emoji size', () => {
+    const stickerRules = keepsakeCss.match(/\.strip-preview__sticker \{[^}]+\}/)?.[0]
+
+    expect(stickerRules).toContain('background: transparent')
+    expect(stickerRules).toContain('height: 44px')
+    expect(stickerRules).toContain('width: 44px')
+    expect(stickerRules).toContain('font-size: 17px')
+    expect(stickerRules).toContain('margin: -13.5px')
   })
 
   it('keeps the mobile tool switcher fixed with clearance for the editor action', () => {
@@ -427,6 +442,7 @@ describe('landing and room', () => {
 
   it('keeps landing and room entrance motion within the approved duration', () => {
     expect(keepsakeCss).toContain('.landing.screen-enter,\n.room.screen-enter { animation-duration: 200ms; }')
+    expect(appSource).toContain('.screen-enter { animation:fadeInUp 200ms cubic-bezier(0.22,1,0.36,1) both; }')
   })
 })
 
@@ -614,6 +630,24 @@ describe('camera recovery', () => {
 })
 
 describe('App camera request timing', () => {
+  it('shows recoverable retry UI when mediaDevices is unavailable synchronously', async () => {
+    window.history.replaceState({}, '', '/')
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: undefined,
+    })
+    const user = userEvent.setup()
+
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a booth' }))
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByRole('button', { name: 'Next: Choose scene' }))
+    await user.click(screen.getByRole('button', { name: 'Next: Get ready' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retry camera' })).toBeInTheDocument())
+    expect(screen.queryByText('Requesting camera…')).not.toBeInTheDocument()
+  })
+
   it('stops a request that resolves in the same turn as retry without publishing it as the replacement stream', async () => {
     const first = deferred<MediaStream>()
     const second = deferred<MediaStream>()
@@ -719,5 +753,87 @@ describe('App camera request timing', () => {
 
     expect(lateCamera.tracks[0].stop).toHaveBeenCalledOnce()
     expect(lateCamera.tracks[1].stop).toHaveBeenCalledOnce()
+  })
+})
+
+type DownloadLifecycleTestHandle = AppLifecycleTestHandle & {
+  download: () => Promise<void>
+  seedReveal: (stripUrl: string) => void
+}
+
+async function renderAppAtReveal() {
+  const lifecycle = { current: null as DownloadLifecycleTestHandle | null }
+  render(<App appLifecycleTestHandle={handle => { lifecycle.current = handle as DownloadLifecycleTestHandle | null }} />)
+  await waitFor(() => expect(lifecycle.current).not.toBeNull())
+  act(() => lifecycle.current?.seedReveal('data:image/png;base64,strip'))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument())
+  return lifecycle
+}
+
+describe('App download lifecycle', () => {
+  it('does not publish a resolved download after Start again', async () => {
+    const pendingDownload = deferred<void>()
+    vi.mocked(downloadStrip).mockReturnValueOnce(pendingDownload.promise)
+
+    try {
+      const lifecycle = await renderAppAtReveal()
+      act(() => { void lifecycle.current?.download() })
+      expect(downloadStrip).toHaveBeenCalledOnce()
+
+      act(() => lifecycle.current?.restart())
+      expect(screen.getByRole('button', { name: 'Start a booth' })).toBeInTheDocument()
+      act(() => lifecycle.current?.seedReveal('data:image/png;base64,fresh'))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument())
+
+      await act(async () => {
+        pendingDownload.resolve()
+        await pendingDownload.promise
+      })
+
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    } finally {
+      vi.mocked(downloadStrip).mockReset()
+    }
+  })
+
+  it('does not publish a rejected download after Start again', async () => {
+    const pendingDownload = deferred<void>()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.mocked(downloadStrip).mockReturnValueOnce(pendingDownload.promise)
+
+    try {
+      const lifecycle = await renderAppAtReveal()
+      act(() => { void lifecycle.current?.download() })
+      expect(downloadStrip).toHaveBeenCalledOnce()
+
+      act(() => lifecycle.current?.restart())
+      act(() => lifecycle.current?.seedReveal('data:image/png;base64,fresh'))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument())
+
+      await act(async () => {
+        pendingDownload.reject(new Error('late download failure'))
+        await Promise.resolve()
+      })
+
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(consoleError).not.toHaveBeenCalled()
+    } finally {
+      consoleError.mockRestore()
+      vi.mocked(downloadStrip).mockReset()
+    }
+  })
+
+  it('publishes success for the current download', async () => {
+    vi.mocked(downloadStrip).mockResolvedValueOnce(undefined)
+
+    try {
+      const lifecycle = await renderAppAtReveal()
+      await act(async () => { await lifecycle.current?.download() })
+
+      expect(downloadStrip).toHaveBeenCalledWith('data:image/png;base64,strip')
+      expect(screen.getByRole('status')).toHaveTextContent('Saved directly to this device. Nothing was uploaded.')
+    } finally {
+      vi.mocked(downloadStrip).mockReset()
+    }
   })
 })

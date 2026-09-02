@@ -196,3 +196,31 @@ asset/request failure was reproduced.
 Final release gate on 2026-09-02: `npm run check` completed typecheck, ESLint,
 Vitest (4 files, 38 tests), and Vite build successfully. No push, deployment,
 merge, or CV change was made.
+
+### Final lifecycle/accessibility review — 2026-09-02
+
+The final review found two asynchronous ownership gaps outside the protected CV
+pipeline. Camera API property access occurred before a promise existed, so a
+browser without `mediaDevices` or `getUserMedia` could throw synchronously and
+leave the ready UI requesting. Camera acquisition now begins inside the
+existing promise chain, so the unchanged request guard classifies that failure
+into the recoverable Retry UI and still rejects stale requests safely.
+
+Download completion now carries an App-owned generation token. A new download,
+new strip/session, navigation away from reveal, Start again, and unmount all
+invalidate the prior generation; only the current operation can publish done
+or error feedback. This changes neither the PNG drawing/output bytes nor the
+PeerJS contracts.
+
+Focused TDD evidence: the first `npx vitest run src/app/App.test.tsx` run was
+RED with the expected synchronous `mediaDevices.getUserMedia` TypeError, no
+download lifecycle handle/ownership boundary, and missing 44px/200ms CSS
+contracts. After the smallest boundary fixes, the same focused run was GREEN:
+34 tests passed. It includes missing-camera Retry UI, deferred download resolve
+and reject after Start again, current download success, sticker hit-area
+contracts, and screen-entry duration. Placed sticker controls now have a
+transparent 44px target centered on the unchanged 17px visual emoji, preserving
+the existing preview position and generated-strip coordinates. The base
+`.screen-enter` duration is 200ms; the existing reduced-motion override is
+unchanged. No browser rerun was needed for these deterministic lifecycle/CSS
+checks; the automated component suite exercised the affected runtime paths.

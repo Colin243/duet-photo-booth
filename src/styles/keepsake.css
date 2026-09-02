@@ -634,7 +634,7 @@ button, input, textarea { font: inherit; }
 .strip-preview__photo { background: #eee; border-radius: 4px; cursor: grab; overflow: hidden; position: relative; }
 .strip-preview__drag { align-items: center; background: rgba(0, 0, 0, 0.2); display: flex; inset: 0; justify-content: center; opacity: 0; pointer-events: none; position: absolute; transition: opacity 150ms ease; }
 .strip-preview__drag.is-dragging { opacity: 1; }
-.strip-preview__sticker { cursor: pointer; font-size: 17px; line-height: 1; position: absolute; user-select: none; z-index: 5; }
+.strip-preview__sticker { align-items: center; background: transparent; border: 0; cursor: pointer; display: flex; font-size: 17px; height: 44px; justify-content: center; line-height: 1; margin: -13.5px; padding: 0; position: absolute; user-select: none; width: 44px; z-index: 5; }
 .strip-preview__footer { align-items: center; display: flex; flex-direction: column; gap: 2px; height: 34px; justify-content: center; margin-top: 5px; }
 .strip-preview__footer span:first-child { color: var(--studio-muted); font-family: 'Dancing Script', cursive; font-size: 11px; }
 .strip-preview__footer span:last-child { color: #aaa; font-size: 8px; }

@@ -95,7 +95,7 @@ const GLOBAL_CSS = `
     mix-blend-mode:multiply;
   }
 
-  .screen-enter { animation:fadeInUp 0.42s cubic-bezier(0.22,1,0.36,1) both; }
+  .screen-enter { animation:fadeInUp 200ms cubic-bezier(0.22,1,0.36,1) both; }
 
   input[type=range]{ -webkit-appearance:none; appearance:none; height:4px; border-radius:2px; outline:none; cursor:pointer; }
   input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--thumb-color,#C85B82); cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.2); }
@@ -126,6 +126,8 @@ export type AppLifecycleTestHandle = {
   restart: () => void
   seedStripBuild: (photos: string[], selected: number[]) => void
   developStrip: (options: CustomizeOpts) => Promise<void>
+  seedReveal: (stripUrl: string) => void
+  download: () => Promise<void>
 }
 type AppProps = {
   cameraLifecycleTestHandle?: MutableRefObject<CameraLifecycleTestHandle | null>
@@ -2208,6 +2210,7 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
   const cameraRequestRef=useRef<ReturnType<typeof createCameraRequestGuard>|null>(null)
   const revealTimeoutRef=useRef<ReturnType<typeof setTimeout>|null>(null)
   const stripBuildGenerationRef=useRef(0)
+  const downloadGenerationRef=useRef(0)
 
   const clearRevealTimeout=useCallback(()=>{
     if(revealTimeoutRef.current!==null){
@@ -2220,6 +2223,10 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
     stripBuildGenerationRef.current+=1
     clearRevealTimeout()
   },[clearRevealTimeout])
+
+  const invalidateDownload=useCallback(()=>{
+    downloadGenerationRef.current+=1
+  },[])
 
   const invalidateCameraRequest=useCallback(()=>{
     const request=cameraRequestRef.current
@@ -2240,10 +2247,11 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
 
   useEffect(()=>()=>{
     invalidateStripBuild()
+    invalidateDownload()
     invalidateCameraRequest()
     stopMediaStream(streamRef.current)
     streamRef.current=null
-  },[invalidateStripBuild,invalidateCameraRequest])
+  },[invalidateStripBuild,invalidateDownload,invalidateCameraRequest])
 
   useEffect(()=>{
     if(screen!=="reveal") invalidateStripBuild()
@@ -2260,7 +2268,10 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
   }
 
   const navigate=(next:Screen)=>{
-    if(next!=="reveal") invalidateStripBuild()
+    if(next!=="reveal"){
+      invalidateStripBuild()
+      invalidateDownload()
+    }
     if(!isCameraLifecycleScreen(next)) invalidateCameraRequest()
     setScreen(next)
     sendMessage({type:"STATE",screen:next,layout,themeId})
@@ -2397,7 +2408,11 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
     const demoScale=Math.max(.72,Math.min(1.35,Number(new URLSearchParams(window.location.search).get("demoScale"))||1))
     const cameraPromise=demoParticipant==="p1"||demoParticipant==="p2"
       ? createLocalDemoStream(demoParticipant,demoPose,demoMotion,demoScale)
-      : navigator.mediaDevices.getUserMedia({ video:{ facingMode:"user", width:{ideal:1280}, height:{ideal:720} }, audio:true })
+      : Promise.resolve().then(()=>{
+        const devices=navigator.mediaDevices
+        if(typeof devices?.getUserMedia!=="function") throw new Error("Camera API unavailable")
+        return devices.getUserMedia({ video:{ facingMode:"user", width:{ideal:1280}, height:{ideal:720} }, audio:true })
+      })
 
     void cameraPromise
       .then(nextStream=>{
@@ -2437,6 +2452,8 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
 
   const startSession=(joinCode?:string)=>{
     invalidateStripBuild()
+    invalidateDownload()
+    setDownloadStatus("idle")
     const nextCode=joinCode||genCode()
     setRoomCode(nextCode); setIsHost(!joinCode); setPartnerJoined(false)
     const params=new URLSearchParams({room:nextCode})
@@ -2467,6 +2484,8 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
 
   const handleCustomizeDone=async({ frameColor,filter,stickers,name1,name2,date,offsets }:CustomizeOpts)=>{
     invalidateStripBuild()
+    invalidateDownload()
+    setDownloadStatus("idle")
     const stripBuildGeneration=stripBuildGenerationRef.current
     setRevealing(true); navigate("reveal")
     const need=layout==="classic"?4:6
@@ -2537,6 +2556,7 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
 
   const handleStartAgain=()=>{
     invalidateStripBuild()
+    invalidateDownload()
     dataRef.current?.close(); mediaRef.current?.close(); peerRef.current?.destroy()
     dataRef.current=null; mediaRef.current=null; peerRef.current=null
     invalidateCameraRequest()
@@ -2548,6 +2568,22 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
     setScreen("landing")
   }
 
+  const handleDownload=async()=>{
+    if(!stripUrl||downloadStatus==="working") return
+    const downloadGeneration=downloadGenerationRef.current+1
+    downloadGenerationRef.current=downloadGeneration
+    setDownloadStatus("working")
+    try{
+      await downloadStrip(stripUrl)
+      if(downloadGeneration===downloadGenerationRef.current) setDownloadStatus("done")
+    }catch(error){
+      if(downloadGeneration===downloadGenerationRef.current){
+        console.error("Strip download failed",error)
+        setDownloadStatus("error")
+      }
+    }
+  }
+
   useEffect(()=>{
     if(!appLifecycleTestHandle) return
     const handle={
@@ -2557,22 +2593,18 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
         setSelected(nextSelected)
       },
       developStrip:handleCustomizeDone,
+      seedReveal: (nextStripUrl:string)=>{
+        invalidateDownload()
+        setDownloadStatus("idle")
+        setStripUrl(nextStripUrl)
+        setRevealing(false)
+        setScreen("reveal")
+      },
+      download:handleDownload,
     }
     appLifecycleTestHandle(handle)
     return ()=>appLifecycleTestHandle(null)
-  },[appLifecycleTestHandle,handleStartAgain])
-
-  const handleDownload=async()=>{
-    if(!stripUrl||downloadStatus==="working") return
-    setDownloadStatus("working")
-    try{
-      await downloadStrip(stripUrl)
-      setDownloadStatus("done")
-    }catch(error){
-      console.error("Strip download failed",error)
-      setDownloadStatus("error")
-    }
-  }
+  },[appLifecycleTestHandle,handleStartAgain,handleCustomizeDone,handleDownload,invalidateDownload])
 
   return (
     <>
