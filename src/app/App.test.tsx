@@ -6,6 +6,7 @@ import App, { type AppLifecycleTestHandle, type CameraLifecycleTestHandle, Custo
 import { downloadStrip } from '../lib/downloadStrip'
 
 const peerEvents = vi.hoisted(() => ({
+  dataListeners: [] as Array<(value: unknown) => void>,
   destroys: [] as string[],
   ids: [] as string[],
 }))
@@ -16,8 +17,9 @@ vi.mock('peerjs', () => {
     close = vi.fn()
     send = vi.fn()
 
-    on(event: string, listener: () => void) {
+    on(event: string, listener: (value?: unknown) => void) {
       if (event === 'open') listener()
+      if (event === 'data') peerEvents.dataListeners.push(listener)
     }
   }
 
@@ -758,6 +760,7 @@ describe('App camera request timing', () => {
 
 type DownloadLifecycleTestHandle = AppLifecycleTestHandle & {
   download: () => Promise<void>
+  getDownloadStatus: () => 'idle' | 'working' | 'done' | 'error'
   seedReveal: (stripUrl: string) => void
 }
 
@@ -768,6 +771,26 @@ async function renderAppAtReveal() {
   act(() => lifecycle.current?.seedReveal('data:image/png;base64,strip'))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument())
   return lifecycle
+}
+
+async function renderPeerAppAtReveal() {
+  window.history.replaceState({}, '', '/')
+  peerEvents.dataListeners.length = 0
+  const lifecycle = { current: null as DownloadLifecycleTestHandle | null }
+  const user = userEvent.setup()
+  render(<App appLifecycleTestHandle={handle => { lifecycle.current = handle as DownloadLifecycleTestHandle | null }} />)
+  await waitFor(() => expect(lifecycle.current).not.toBeNull())
+  await user.click(screen.getByRole('button', { name: 'Start a booth' }))
+  await waitFor(() => expect(peerEvents.dataListeners).toHaveLength(1))
+  act(() => lifecycle.current?.seedReveal('data:image/png;base64,strip'))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument())
+  return lifecycle
+}
+
+function sendPartnerStateAwayFromReveal() {
+  act(() => {
+    peerEvents.dataListeners.at(-1)?.({ type: 'STATE', screen: 'select', layout: 'classic', themeId: 'classic' })
+  })
 }
 
 describe('App download lifecycle', () => {
@@ -833,6 +856,56 @@ describe('App download lifecycle', () => {
       expect(downloadStrip).toHaveBeenCalledWith('data:image/png;base64,strip')
       expect(screen.getByRole('status')).toHaveTextContent('Saved directly to this device. Nothing was uploaded.')
     } finally {
+      vi.mocked(downloadStrip).mockReset()
+    }
+  })
+
+  it('does not publish a resolved download after inbound partner navigation leaves reveal', async () => {
+    const pendingDownload = deferred<void>()
+    vi.mocked(downloadStrip).mockReturnValueOnce(pendingDownload.promise)
+
+    try {
+      const lifecycle = await renderPeerAppAtReveal()
+      act(() => { void lifecycle.current?.download() })
+      expect(lifecycle.current?.getDownloadStatus()).toBe('working')
+
+      sendPartnerStateAwayFromReveal()
+      await waitFor(() => expect(screen.getByText('Pick your favourites')).toBeInTheDocument())
+
+      await act(async () => {
+        pendingDownload.resolve()
+        await pendingDownload.promise
+      })
+
+      expect(lifecycle.current?.getDownloadStatus()).toBe('idle')
+      act(() => lifecycle.current?.seedReveal('data:image/png;base64,fresh'))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument())
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    } finally {
+      vi.mocked(downloadStrip).mockReset()
+    }
+  })
+
+  it('does not publish a rejected download after inbound partner navigation leaves reveal', async () => {
+    const pendingDownload = deferred<void>()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.mocked(downloadStrip).mockReturnValueOnce(pendingDownload.promise)
+
+    try {
+      const lifecycle = await renderPeerAppAtReveal()
+      act(() => { void lifecycle.current?.download() })
+      sendPartnerStateAwayFromReveal()
+      await waitFor(() => expect(screen.getByText('Pick your favourites')).toBeInTheDocument())
+
+      await act(async () => {
+        pendingDownload.reject(new Error('late partner-navigation failure'))
+        await Promise.resolve()
+      })
+
+      expect(lifecycle.current?.getDownloadStatus()).toBe('idle')
+      expect(consoleError).not.toHaveBeenCalled()
+    } finally {
+      consoleError.mockRestore()
       vi.mocked(downloadStrip).mockReset()
     }
   })

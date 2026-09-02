@@ -212,13 +212,20 @@ invalidate the prior generation; only the current operation can publish done
 or error feedback. This changes neither the PNG drawing/output bytes nor the
 PeerJS contracts.
 
+Inbound PeerJS `STATE` navigation now performs the same download invalidation
+before changing screens and resets hidden download feedback to idle. This
+prevents a partner-driven transition away from reveal from letting a late
+download resolve or reject contaminate a later reveal/session.
+
 Focused TDD evidence: the first `npx vitest run src/app/App.test.tsx` run was
 RED with the expected synchronous `mediaDevices.getUserMedia` TypeError, no
 download lifecycle handle/ownership boundary, and missing 44px/200ms CSS
 contracts. After the smallest boundary fixes, the same focused run was GREEN:
-34 tests passed. It includes missing-camera Retry UI, deferred download resolve
-and reject after Start again, current download success, sticker hit-area
-contracts, and screen-entry duration. Placed sticker controls now have a
+34 tests passed. A final peer-driven lifecycle RED/GREEN pass added two
+inbound-`STATE` deferred-download regressions; the focused suite then passed
+36 tests. It includes missing-camera Retry UI, deferred download resolve and
+reject after Start again or partner navigation, current download success,
+sticker hit-area contracts, and screen-entry duration. Placed sticker controls now have a
 transparent 44px target centered on the unchanged 17px visual emoji, preserving
 the existing preview position and generated-strip coordinates. The base
 `.screen-enter` duration is 200ms; the existing reduced-motion override is

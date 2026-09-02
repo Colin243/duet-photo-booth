@@ -128,6 +128,7 @@ export type AppLifecycleTestHandle = {
   developStrip: (options: CustomizeOpts) => Promise<void>
   seedReveal: (stripUrl: string) => void
   download: () => Promise<void>
+  getDownloadStatus: () => "idle"|"working"|"done"|"error"
 }
 type AppProps = {
   cameraLifecycleTestHandle?: MutableRefObject<CameraLifecycleTestHandle | null>
@@ -2351,6 +2352,10 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
         const message=raw as SyncMessage
         if(message.type==="STATE"){
           invalidateStripBuild()
+          if(message.screen!=="reveal"){
+            invalidateDownload()
+            setDownloadStatus("idle")
+          }
           if(!isCameraLifecycleScreen(message.screen)) invalidateCameraRequest()
           setScreen(message.screen);setLayout(message.layout);setThemeId(message.themeId)
         }
@@ -2375,7 +2380,7 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
       dataRef.current?.close(); mediaRef.current?.close(); peer.destroy()
       dataRef.current=null; mediaRef.current=null; peerRef.current=null
     }
-  },[roomCode,isHost,invalidateCameraRequest,invalidateStripBuild])
+  },[roomCode,isHost,invalidateCameraRequest,invalidateDownload,invalidateStripBuild])
 
   // Tips rotation
   useEffect(()=>{
@@ -2601,6 +2606,7 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
         setScreen("reveal")
       },
       download:handleDownload,
+      getDownloadStatus:()=>downloadStatus,
     }
     appLifecycleTestHandle(handle)
     return ()=>appLifecycleTestHandle(null)
