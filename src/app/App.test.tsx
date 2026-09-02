@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import App, { type CameraLifecycleTestHandle, CustomizeScreen, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, SelectScreen, ThemeScreen } from './App'
+import App, { type CameraLifecycleTestHandle, CustomizeScreen, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RevealScreen, RoomScreen, SelectScreen, ThemeScreen } from './App'
 
 vi.mock('peerjs', () => {
   class MockConnection {
@@ -134,6 +134,66 @@ describe('strip customization', () => {
       filter: 'warm',
       offsets: { 0: { x: 18, y: 24 } },
     }))
+  })
+})
+
+describe('strip reveal', () => {
+  it('ends on the completed strip and actions after the print entrance delay', () => {
+    vi.useFakeTimers()
+
+    try {
+      render(<RevealScreen stripUrl="data:image/png;base64,abc" isRevealing={false} downloadStatus="done" onDownload={vi.fn()} onShare={vi.fn()} onStartAgain={vi.fn()} />)
+
+      expect(screen.queryByRole('img', { name: 'Your photo strip' })).not.toBeInTheDocument()
+      act(() => vi.advanceTimersByTime(200))
+      expect(screen.getByRole('img', { name: 'Your photo strip' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Start again' })).toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent('Saved directly to this device. Nothing was uploaded.')
+      expect(screen.queryByText(/Coming soon/i)).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels a pending strip entrance when development supersedes it', () => {
+    vi.useFakeTimers()
+
+    try {
+      const { rerender, unmount } = render(<RevealScreen stripUrl="data:image/png;base64,abc" isRevealing={false} downloadStatus="idle" onDownload={vi.fn()} onShare={vi.fn()} onStartAgain={vi.fn()} />)
+
+      expect(vi.getTimerCount()).toBe(1)
+      rerender(<RevealScreen stripUrl="data:image/png;base64,abc" isRevealing downloadStatus="idle" onDownload={vi.fn()} onShare={vi.fn()} onStartAgain={vi.fn()} />)
+      expect(vi.getTimerCount()).toBe(0)
+
+      unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('uses the print-processing copy and failure feedback', () => {
+    const { rerender } = render(<RevealScreen stripUrl="data:image/png;base64,abc" isRevealing downloadStatus="idle" onDownload={vi.fn()} onShare={vi.fn()} onStartAgain={vi.fn()} />)
+
+    expect(screen.getByText('Developing your strip')).toBeInTheDocument()
+    expect(screen.getByText('Your photos are being printed.')).toBeInTheDocument()
+    expect(document.querySelector('.lucide-aperture')).toBeInTheDocument()
+
+    rerender(<RevealScreen stripUrl="data:image/png;base64,abc" isRevealing={false} downloadStatus="error" onDownload={vi.fn()} onShare={vi.fn()} onStartAgain={vi.fn()} />)
+    expect(screen.getByRole('status')).toHaveTextContent('The download failed. Please try again.')
+  })
+})
+
+describe('restart lifecycle', () => {
+  it('clears a pending media call before restarting the booth', () => {
+    const restartHandler = appSource.slice(
+      appSource.indexOf('const handleStartAgain'),
+      appSource.indexOf('const handleDownload'),
+    )
+
+    expect(restartHandler).toContain('setPendingMediaCall(null)')
   })
 })
 

@@ -6,7 +6,7 @@ import {
 } from "@mediapipe/tasks-vision"
 import { downloadStrip } from "../lib/downloadStrip"
 import {
-  Camera, Download, Share2, RotateCcw, Check, Copy, X,
+  Aperture, Camera, Download, Share2, RotateCcw, Check, Copy, X,
   Frame, ImageIcon, Move, ShieldCheck, Sticker, Type,
 } from "lucide-react"
 import { BrandMark, SegmentedControl, SetupHeader, StatusPanel, StudioButton } from "./ui/StudioUI"
@@ -2098,77 +2098,61 @@ export function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
 // REVEAL SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RevealScreen({ stripUrl, isRevealing, downloadStatus, onDownload, onShare, onStartAgain }:{
+export function RevealScreen({ stripUrl, isRevealing, downloadStatus, onDownload, onShare, onStartAgain }:{
   stripUrl:string; isRevealing:boolean; downloadStatus:"idle"|"working"|"done"|"error";
   onDownload:()=>void; onShare:()=>void; onStartAgain:()=>void
 }) {
-  const [dots,   setDots]    = useState(".")
   const [showStrip, setShow] = useState(false)
 
   useEffect(()=>{
-    if(!isRevealing){ setTimeout(()=>setShow(true),200); return }
-    const t=setInterval(()=>setDots(d=>d.length>=3?".":d+"."),480)
-    return ()=>clearInterval(t)
+    if(isRevealing){
+      setShow(false)
+      return
+    }
+    const entranceTimeout=setTimeout(()=>setShow(true),200)
+    return ()=>clearTimeout(entranceTimeout)
   },[isRevealing])
 
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"48px 24px", background:isRevealing?"linear-gradient(160deg,#180810,#2d0e1a)":"linear-gradient(160deg,#FDF2F8,#FDF7F2)", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden", transition:"background 1.4s ease" }}>
-      <div className="grain-overlay" />
-
-      {/* Darkroom ambient light */}
-      {isRevealing&&<div style={{ position:"absolute", inset:0, background:"radial-gradient(ellipse at 50% 10%,rgba(200,30,60,0.15) 0%,transparent 65%)", pointerEvents:"none" }}/>}
-
-      <div style={{ position:"relative", zIndex:10, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:20 }}>
+    <main className={`reveal screen-enter${isRevealing ? " reveal--developing" : " reveal--complete"}`}>
+      <div className="reveal__content">
         {isRevealing?(
-          <>
-            <div style={{ fontSize:52, animation:"heartbeat 1.6s ease infinite" }}>🌹</div>
-            <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:36, color:"#e8a0b0", margin:0 }}>Developing{dots}</h2>
-            <p style={{ color:"rgba(232,160,176,0.58)", fontSize:15 }}>Your memories are being printed…</p>
-            <div style={{ width:220, height:4, background:"rgba(255,255,255,0.08)", borderRadius:2, overflow:"hidden" }}>
-              <div style={{ height:"100%", background:"linear-gradient(90deg,#C85B82,#e8a0b0)", borderRadius:2, width:"60%", backgroundSize:"200% 100%", animation:"shimmerBar 1.4s linear infinite" }}/>
-            </div>
-          </>
+          <section className="reveal__processing" aria-label="Developing your strip">
+            <Aperture aria-hidden="true" />
+            <h1>Developing your strip</h1>
+            <p>Your photos are being printed.</p>
+            <div className="reveal__progress" aria-hidden="true"><span /></div>
+          </section>
         ):(
-          <>
-            <p style={{ fontSize:11, letterSpacing:"0.22em", color:"#C85B82", fontWeight:700, margin:0 }}>✦  YOUR STRIP IS READY  ✦</p>
-            <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:36, color:"#2D1B2E", margin:0 }}>Here you are, together.</h2>
-            <p style={{ color:"#9B7B90", fontSize:15 }}>Download or share your print — cherish it forever.</p>
-
-            {/* Strip reveal */}
+          <section className="reveal__final">
+            <p className="reveal__eyebrow">Your strip is ready</p>
+            <h1>Here you are, together.</h1>
+            <p className="reveal__intro">A little piece of this moment, just for you.</p>
             {stripUrl&&showStrip&&(
-              <div style={{ animation:"stripSlide 0.95s cubic-bezier(0.22,1,0.36,1) forwards", boxShadow:"0 28px 80px rgba(0,0,0,0.22)", borderRadius:10, overflow:"hidden", maxHeight:"58vh" }}>
-                <img src={stripUrl} alt="Your photo strip" style={{ display:"block", maxHeight:"58vh", maxWidth:"88vw", animation:"developing 2.4s ease forwards" }}/>
+              <div className="reveal__strip">
+                <img src={stripUrl} alt="Your photo strip" />
               </div>
             )}
-
-            {/* Actions */}
-            <div style={{ display:"flex", flexWrap:"wrap", gap:12, justifyContent:"center", marginTop:6 }}>
-              <button disabled={downloadStatus==="working"} onClick={onDownload} style={{ display:"flex", alignItems:"center", gap:8, padding:"13px 28px", borderRadius:50, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:15, border:"none", cursor:downloadStatus==="working"?"wait":"pointer", opacity:downloadStatus==="working"?.72:1, boxShadow:"0 6px 24px rgba(200,91,130,0.42)" }}>
-                <Download size={15}/>{downloadStatus==="working"?"Preparing…":"Download Strip"}
-              </button>
-              <button onClick={onShare} style={{ display:"flex", alignItems:"center", gap:8, padding:"13px 26px", borderRadius:50, background:"transparent", border:"1.5px solid rgba(200,91,130,0.35)", color:"#C85B82", fontFamily:"'Nunito',sans-serif", fontWeight:600, fontSize:15, cursor:"pointer" }}>
-                <Share2 size={15}/>Share
-              </button>
-              <button onClick={onStartAgain} style={{ display:"flex", alignItems:"center", gap:8, padding:"13px 22px", borderRadius:50, background:"transparent", border:"1.5px solid rgba(0,0,0,0.1)", color:"#9B7B90", fontFamily:"'Nunito',sans-serif", fontWeight:600, fontSize:15, cursor:"pointer" }}>
-                <RotateCcw size={14}/>Start Again
-              </button>
+            <div className="reveal__actions">
+              <StudioButton disabled={downloadStatus==="working"} onClick={onDownload}>
+                <Download aria-hidden="true" size={17}/>{downloadStatus==="working" ? "Preparing" : "Download"}
+              </StudioButton>
+              <StudioButton tone="secondary" onClick={onShare}>
+                <Share2 aria-hidden="true" size={17}/>Share
+              </StudioButton>
+              <StudioButton tone="quiet" onClick={onStartAgain}>
+                <RotateCcw aria-hidden="true" size={16}/>Start again
+              </StudioButton>
             </div>
             {downloadStatus!=="idle"&&downloadStatus!=="working"&&(
-              <p style={{ margin:0, fontSize:12, color:downloadStatus==="error"?"#dc2626":"#9B7B90" }}>
-                {downloadStatus==="done"?"Downloaded directly to your device — nothing was uploaded.":"Download failed. Please try again."}
+              <p className={`reveal__download-status reveal__download-status--${downloadStatus}`} role="status">
+                {downloadStatus==="done"?"Saved directly to this device. Nothing was uploaded.":"The download failed. Please try again."}
               </p>
             )}
-
-            {/* GIF teaser */}
-            <div style={{ marginTop:10, padding:"14px 22px", borderRadius:14, background:"rgba(200,91,130,0.05)", border:"1px dashed rgba(200,91,130,0.22)", maxWidth:360 }}>
-              <p style={{ fontSize:12, color:"#9B7B90", lineHeight:1.65, margin:0 }}>
-                🎬 <strong>Coming soon:</strong> Animated GIF & video recap of all 10 shots — export your whole session as a mini film.
-              </p>
-            </div>
-          </>
+          </section>
         )}
       </div>
-    </div>
+    </main>
   )
 }
 
@@ -2214,6 +2198,14 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
   const participantScaleRef=useRef(localParticipantScale)
   const streamRef=useRef<MediaStream|null>(null)
   const cameraRequestRef=useRef<ReturnType<typeof createCameraRequestGuard>|null>(null)
+  const revealTimeoutRef=useRef<ReturnType<typeof setTimeout>|null>(null)
+
+  const clearRevealTimeout=useCallback(()=>{
+    if(revealTimeoutRef.current!==null){
+      clearTimeout(revealTimeoutRef.current)
+      revealTimeoutRef.current=null
+    }
+  },[])
 
   const invalidateCameraRequest=useCallback(()=>{
     const request=cameraRequestRef.current
@@ -2233,10 +2225,15 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
   },[])
 
   useEffect(()=>()=>{
+    clearRevealTimeout()
     invalidateCameraRequest()
     stopMediaStream(streamRef.current)
     streamRef.current=null
-  },[invalidateCameraRequest])
+  },[clearRevealTimeout,invalidateCameraRequest])
+
+  useEffect(()=>{
+    if(screen!=="reveal") clearRevealTimeout()
+  },[screen,clearRevealTimeout])
 
   useEffect(()=>{ syncRef.current={screen,layout,themeId} },[screen,layout,themeId])
   useEffect(()=>{ beautyRef.current=skinSmoothing },[skinSmoothing])
@@ -2452,6 +2449,7 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
   }
 
   const handleCustomizeDone=async({ frameColor,filter,stickers,name1,name2,date,offsets }:CustomizeOpts)=>{
+    clearRevealTimeout()
     setRevealing(true); navigate("reveal")
     const need=layout==="classic"?4:6
     const sel=selected.slice(0,need).map(i=>photos[i])
@@ -2510,15 +2508,19 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
     ctx.fillText(date,stripW/2,fY+76)
 
     setStripUrl(canvas.toDataURL("image/png"))
-    setTimeout(()=>setRevealing(false),2900)
+    revealTimeoutRef.current=setTimeout(()=>{
+      revealTimeoutRef.current=null
+      setRevealing(false)
+    },2900)
   }
 
   const handleStartAgain=()=>{
+    clearRevealTimeout()
     dataRef.current?.close(); mediaRef.current?.close(); peerRef.current?.destroy()
     invalidateCameraRequest()
     stopCurrentCamera()
     setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle")
-    setRemoteStream(null); setCaptureAt(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setLocalProp({propId:"none",variant:0});setPartnerProp({propId:"none",variant:0});setLocalParticipantScale(1);setPartnerParticipantScale(1);setFrontParticipant("p1")
+    setRemoteStream(null); setPendingMediaCall(null); setCaptureAt(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setLocalProp({propId:"none",variant:0});setPartnerProp({propId:"none",variant:0});setLocalParticipantScale(1);setPartnerParticipantScale(1);setFrontParticipant("p1")
     window.history.replaceState({},"",window.location.pathname)
     setScreen("landing")
   }
