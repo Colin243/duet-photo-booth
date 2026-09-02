@@ -173,6 +173,12 @@ exercised. The browser confirmed a completed local PNG download and Start
 again reset the URL to the path with no room/demo query, photos, preferences,
 room/role state, and local streams.
 
+The paired-browser keyboard-removal attempt did not achieve focus on the
+injected sticker, so browser evidence does not claim Space/Enter removal.
+Existing deterministic component coverage in `src/app/App.test.tsx` covers
+both keys. This is a harness-evidence limitation, not a reproduced product
+defect.
+
 The required local QA images and manifest are intentionally ignored at
 `local-reviews/keepsake-studio-redesign-2026-09-02/`. Washer, Classic, and
 Elevator each have a paired upper-body/overlap/motion runtime capture with
