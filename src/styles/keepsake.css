@@ -811,14 +811,16 @@ button, input, textarea { font: inherit; }
   .filter-panel { border-radius: 0; border-left: 0; border-right: 0; padding: 20px 0 6px; }
   .filter-panel__heading { padding: 0 20px; }
   .scene-card > img { height: 158px; }
-  .customize-workspace { gap: 20px; padding: 28px 16px calc(32px + env(safe-area-inset-bottom)); }
+  .customize-workspace { gap: 20px; padding: 28px 16px calc(116px + env(safe-area-inset-bottom)); }
   .customize-preview { position: static; }
   .customize-tools { border-radius: 16px; padding: 16px; }
   .customize-tabs {
-    bottom: max(8px, env(safe-area-inset-bottom));
     box-shadow: 0 10px 28px rgba(45, 27, 46, 0.12);
-    position: sticky;
-    z-index: 2;
+    left: 12px;
+    position: fixed;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: 20;
   }
   .customize-tabs button { min-height: 52px; }
   .customize-develop { margin-top: 0; position: static; }

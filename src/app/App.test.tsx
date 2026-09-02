@@ -81,6 +81,12 @@ describe('strip customization', () => {
     await user.keyboard(' ')
     expect(screen.queryByRole('button', { name: 'Remove 🌸 sticker' })).not.toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'Add 💕 sticker' }))
+    const secondSticker = screen.getByRole('button', { name: 'Remove 💕 sticker' })
+    secondSticker.focus()
+    await user.keyboard('{Enter}')
+    expect(screen.queryByRole('button', { name: 'Remove 💕 sticker' })).not.toBeInTheDocument()
+
     await user.click(screen.getByRole('tab', { name: 'Names' }))
     await user.type(screen.getByLabelText('Your name'), 'Alex')
     await user.type(screen.getByLabelText('Partner name'), 'Sam')
@@ -97,6 +103,37 @@ describe('strip customization', () => {
       date: 'Sep 2, 2026',
       offsets: {},
     })
+  })
+
+  it('keeps the mobile tool switcher fixed with clearance for the editor action', () => {
+    const mobileCustomize = keepsakeCss.slice(keepsakeCss.indexOf('@media (max-width: 767px)'))
+
+    expect(mobileCustomize).toMatch(/\.customize-tabs \{[\s\S]*?position: fixed;[\s\S]*?bottom: max\(12px, env\(safe-area-inset-bottom\)\);/)
+    expect(mobileCustomize).toContain('.customize-workspace { gap: 20px; padding: 28px 16px calc(116px + env(safe-area-inset-bottom)); }')
+  })
+
+  it('retains pressed frame and filter choices plus drag offsets in the development payload', async () => {
+    const onDone = vi.fn()
+    const user = userEvent.setup()
+    const { container } = render(<CustomizeScreen photos={['one', 'two', 'three', 'four']} selectedIndices={[0, 1, 2, 3]} layout="classic" onDone={onDone} />)
+
+    await user.click(screen.getByRole('button', { name: 'Cream frame' }))
+    expect(screen.getByRole('button', { name: 'Cream frame' })).toBePressed()
+    await user.click(screen.getByRole('tab', { name: 'Filter' }))
+    await user.click(screen.getByRole('button', { name: 'Warm' }))
+    expect(screen.getByRole('button', { name: 'Warm' })).toBePressed()
+
+    const preview = container.querySelector('.strip-preview')!
+    fireEvent.mouseDown(container.querySelector('.strip-preview__photo')!, { clientX: 10, clientY: 20 })
+    fireEvent.mouseMove(preview, { clientX: 28, clientY: 44 })
+    fireEvent.mouseUp(preview)
+    await user.click(screen.getByRole('button', { name: 'Develop strip' }))
+
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({
+      frameColor: '#fdf8ee',
+      filter: 'warm',
+      offsets: { 0: { x: 18, y: 24 } },
+    }))
   })
 })
 
