@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import App, { type CameraLifecycleTestHandle, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, ThemeScreen } from './App'
+import App, { type CameraLifecycleTestHandle, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, SelectScreen, ThemeScreen } from './App'
 
 vi.mock('peerjs', () => {
   class MockConnection {
@@ -37,6 +37,20 @@ describe('booth progress', () => {
     expect(getCaptureProgress(0)).toBe('0 of 10')
     expect(getCaptureProgress(10)).toBe('10 of 10')
     expect(getCaptureProgress(11)).toBe('10 of 10')
+  })
+})
+
+describe('contact-sheet selection', () => {
+  it('shows selection order and required count', async () => {
+    const onToggle = vi.fn()
+    const user = userEvent.setup()
+
+    render(<SelectScreen photos={['one', 'two']} selected={[1]} layout="classic" onToggle={onToggle} onContinue={vi.fn()} />)
+
+    expect(screen.getByText('1 of 4 selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Photo 2, selected first' })).toBePressed()
+    await user.click(screen.getByRole('button', { name: 'Photo 1, not selected' }))
+    expect(onToggle).toHaveBeenCalledWith(0)
   })
 })
 

@@ -406,6 +406,113 @@ button, input, textarea { font: inherit; }
 }
 .choice-check svg { height: 16px; width: 16px; }
 
+.selection-screen {
+  background: var(--studio-canvas);
+  color: var(--studio-ink);
+  min-height: 100vh;
+  overflow-x: clip;
+  position: relative;
+}
+
+.selection-screen__content {
+  margin: 0 auto;
+  max-width: 940px;
+  padding: 48px 24px 64px;
+  position: relative;
+  z-index: 1;
+}
+
+.selection-screen__header { margin: 0 auto 30px; max-width: 600px; text-align: center; }
+.selection-screen__eyebrow {
+  color: var(--studio-berry-pressed);
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+.selection-screen__header h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: clamp(2.25rem, 5vw, 3.25rem);
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin: 0;
+}
+.selection-screen__header > p:last-child { color: var(--studio-muted); font-size: 1rem; line-height: 1.55; margin: 10px 0 0; }
+.selection-screen__header strong { color: var(--studio-berry-pressed); }
+
+.selection-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 auto 28px;
+}
+
+.selection-card {
+  aspect-ratio: 4 / 3;
+  background: var(--studio-surface);
+  border: 2px solid var(--studio-border);
+  border-radius: 16px;
+  box-shadow: 0 4px 14px rgba(74, 48, 67, 0.08);
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.selection-card:hover { border-color: var(--studio-berry); transform: translateY(-2px); }
+.selection-card.is-selected { border-color: var(--studio-berry); box-shadow: 0 10px 24px rgba(200, 82, 120, 0.22); }
+.selection-card img { display: block; height: 100%; object-fit: cover; transition: opacity 180ms ease; width: 100%; }
+.selection-card:not(.is-selected) img { opacity: 0.86; }
+
+.selection-card__selected {
+  align-items: center;
+  background: var(--studio-berry);
+  border: 2px solid var(--studio-surface);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(45, 27, 46, 0.22);
+  color: #fff;
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 900;
+  gap: 2px;
+  height: 32px;
+  justify-content: center;
+  position: absolute;
+  right: 9px;
+  top: 9px;
+  width: 32px;
+}
+.selection-card__selected svg { height: 15px; width: 15px; }
+.selection-card__number {
+  background: rgba(45, 27, 46, 0.72);
+  border-radius: 999px;
+  bottom: 9px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 900;
+  left: 9px;
+  padding: 4px 8px;
+  position: absolute;
+}
+
+.selection-action {
+  align-items: center;
+  background: var(--studio-surface);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--studio-radius-card);
+  box-shadow: var(--studio-shadow);
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.42fr);
+  margin: 0 auto;
+  max-width: 720px;
+  padding: 16px;
+}
+.selection-action p { color: var(--studio-muted); font-size: 0.875rem; line-height: 1.45; margin: 0; }
+.selection-action__count { color: var(--studio-ink) !important; font-size: 1.0625rem !important; font-weight: 900; margin-bottom: 2px !important; }
+
 .scene-card-group {
   display: grid;
   gap: 16px;
@@ -502,6 +609,15 @@ button, input, textarea { font: inherit; }
   .setup-screen__content > .setup-header,
   .setup-screen__content > .studio-button { margin-left: 20px; margin-right: 20px; width: calc(100% - 40px); }
   .setup-header__back { justify-self: start; }
+  .selection-screen__content { padding: 32px 16px calc(36px + env(safe-area-inset-bottom)); }
+  .selection-grid { gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 132px; }
+  .selection-card { border-radius: 14px; }
+  .selection-action {
+    bottom: 0;
+    grid-template-columns: 1fr;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    position: sticky;
+  }
   .layout-card-group { padding: 0 20px; }
   .scene-card-group,
   .filter-card-group {

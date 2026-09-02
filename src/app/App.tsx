@@ -1869,43 +1869,51 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
 // SELECT SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function SelectScreen({ photos, selected, layout, onToggle, onContinue }:{
+export function SelectScreen({ photos, selected, layout, onToggle, onContinue }:{
   photos:string[]; selected:number[]; layout:Layout; onToggle:(i:number)=>void; onContinue:()=>void
 }) {
   const needed=layout==="classic"?4:6
   const done=selected.length===needed
+  const selectionOrder = ["first", "second", "third", "fourth", "fifth", "sixth"]
 
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="selection-screen screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, maxWidth:680, margin:"0 auto", padding:"40px 18px" }}>
-        <div style={{ textAlign:"center", marginBottom:32 }}>
-          <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:32, color:"#2D1B2E", marginBottom:8 }}>Pick your favourites</h2>
-          <p style={{ color:"#9B7B90", fontSize:15 }}>
-            Choose <strong style={{ color:"#C85B82" }}>{needed} photos</strong> for your {layout==="classic"?"classic strip":"wide frame"}.{" "}
-            <span style={{ color:done?"#C85B82":"#ccc", fontWeight:600 }}>{selected.length}/{needed} selected</span>
+      <div className="selection-screen__content">
+        <header className="selection-screen__header">
+          <p className="selection-screen__eyebrow">Contact sheet</p>
+          <h1>Pick your favourites</h1>
+          <p>
+            Choose <strong>{needed} photos</strong> for your {layout==="classic"?"classic strip":"wide frame"}.
           </p>
-        </div>
+        </header>
 
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(176px,1fr))", gap:12, marginBottom:32 }}>
+        <div className="selection-grid">
           {photos.map((p,i)=>{
             const isSel=selected.includes(i)
             const rank=selected.indexOf(i)
+            const stateLabel=isSel?`selected ${selectionOrder[rank]}`:"not selected"
             return (
-              <button key={i} onClick={()=>onToggle(i)} style={{ position:"relative", borderRadius:14, overflow:"hidden", aspectRatio:"4/3", border:`3px solid ${isSel?"#C85B82":"transparent"}`, cursor:"pointer", background:"#000", padding:0, transform:isSel?"scale(1.03)":"scale(1)", boxShadow:isSel?"0 6px 26px rgba(200,91,130,0.38)":"0 2px 10px rgba(0,0,0,0.07)", transition:"all 0.2s" }}>
-                <img src={p} alt={`Photo ${i+1}`} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", opacity:isSel?1:selected.length>=needed?0.42:0.78, transition:"opacity 0.2s" }}/>
-                {isSel&&<div style={{ position:"absolute", top:8, right:8, width:26, height:26, borderRadius:"50%", background:"#C85B82", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.2)" }}><span style={{ fontSize:12, color:"#fff", fontWeight:800 }}>{rank+1}</span></div>}
-                <div style={{ position:"absolute", bottom:6, left:8, fontSize:11, color:"rgba(255,255,255,0.68)", fontWeight:600 }}>#{i+1}</div>
+              <button key={i} type="button" className={`selection-card${isSel?" is-selected":""}`} aria-label={`Photo ${i+1}, ${stateLabel}`} aria-pressed={isSel} onClick={()=>onToggle(i)}>
+                <img src={p} alt="" />
+                {isSel&&<span className="selection-card__selected"><Check aria-hidden="true" /><span>{rank+1}</span></span>}
+                <span className="selection-card__number" aria-hidden="true">Photo {i+1}</span>
               </button>
             )
           })}
         </div>
 
-        <button onClick={onContinue} disabled={!done} style={{ width:"100%", padding:"15px", borderRadius:16, background:done?"linear-gradient(135deg,#C85B82,#BFA3D4)":"#e8e8e8", color:done?"#fff":"#bbb", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:done?"pointer":"not-allowed", boxShadow:done?"0 6px 24px rgba(200,91,130,0.35)":"none", transition:"all 0.3s" }}>
-          {done?"Customize Your Strip →":`Select ${needed-selected.length} more photo${needed-selected.length!==1?"s":""}`}
-        </button>
+        <section className="selection-action" aria-label="Photo selection progress">
+          <div>
+            <p className="selection-action__count">{selected.length} of {needed} selected</p>
+            <p>Tap a selected photo to remove it.</p>
+          </div>
+          <StudioButton block onClick={onContinue} disabled={!done}>
+            Customize your strip
+          </StudioButton>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
 
