@@ -9,7 +9,7 @@ import {
   Camera, Download, Share2, RotateCcw, Check, Copy, X,
   Move, ShieldCheck,
 } from "lucide-react"
-import { BrandMark, StatusPanel, StudioButton } from "./ui/StudioUI"
+import { BrandMark, SetupHeader, StatusPanel, StudioButton } from "./ui/StudioUI"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL CSS
@@ -157,6 +157,12 @@ const THEMES: {
   { id:"washer",   name:"Washer POV",    emoji:"◌",   tagline:"Soft blue laundry-day dream", previewBg:"radial-gradient(circle,transparent 40%,rgba(214,238,247,.72) 68%),url('/theme-assets/laundromat-neutral-blue-v3.png') center/cover", dark:false, accent:"#84B9CF" },
   { id:"elevator", name:"Elevator CCTV", emoji:"REC", tagline:"Cute corner-camera set", previewBg:"linear-gradient(rgba(255,245,249,.04),rgba(255,245,249,.04)),url('/theme-assets/elevator-cctv-cute.jpg') center/cover", dark:false, accent:"#E99ABC" },
 ]
+
+const SCENE_PREVIEWS: Record<ThemeId, string> = {
+  classic: "/couple.png",
+  washer: "/theme-assets/laundromat-neutral-blue-v3.png",
+  elevator: "/theme-assets/elevator-cctv-cute.jpg",
+}
 
 const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
   {id:"none",name:"No filter",emoji:"○",tagline:"Keep it natural"},
@@ -1195,45 +1201,38 @@ export function RoomScreen({ code, partnerJoined, copied, onCopy, onContinue }:{
 function LayoutScreen({ selected, onSelect, onContinue }:{
   selected:Layout; onSelect:(l:Layout)=>void; onContinue:()=>void
 }) {
-  const opts:[Layout,string,string,React.ReactNode][] = [
-    ["classic","Classic Strip","4 vertical photos",
-      <div style={{ display:"flex", flexDirection:"column", gap:5, width:70 }}>
+  const opts:[Layout,string,string,string,React.ReactNode][] = [
+    ["classic","Classic Strip","4 vertical photos","Classic vertical keepsake",
+      <div className="layout-card__preview layout-card__preview--classic" aria-hidden="true">
         {[0,1,2,3].map(i=><div key={i} style={{ height:44, background:`hsl(${330+i*18},58%,${88+i*1.5}%)`, borderRadius:4 }}/>)}
       </div>
     ],
-    ["wide","Wide Frame","6 photos — 2 × 3 grid",
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4, width:96 }}>
+    ["wide","Wide Frame","6 photos","Wide six-photo story",
+      <div className="layout-card__preview layout-card__preview--wide" aria-hidden="true">
         {[0,1,2,3,4,5].map(i=><div key={i} style={{ height:38, background:`hsl(${268+i*16},48%,${88+i*1.5}%)`, borderRadius:4 }}/>)}
       </div>
     ],
   ]
 
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 20px", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="setup-screen setup-screen--layout screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:540, textAlign:"center" }}>
-        <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  1 / 3</p>
-        <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Choose your layout</h2>
-        <p style={{ color:"#9B7B90", marginBottom:36, fontSize:15 }}>Both layouts give you 10 attempts to capture the perfect shot.</p>
+      <section className="setup-screen__content" aria-labelledby="layout-title">
+        <SetupHeader step={1} title="Choose your layout" description="Both layouts give you 10 attempts to capture the perfect shot." />
 
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:32 }}>
-          {opts.map(([id,name,desc,preview])=>(
-            <button key={id} onClick={()=>onSelect(id)} style={{ background:"#fff", borderRadius:22, padding:"30px 20px", border:`2px solid ${selected===id?"#C85B82":"rgba(200,91,130,0.10)"}`, cursor:"pointer", transition:"all 0.24s", boxShadow:selected===id?"0 4px 26px rgba(200,91,130,0.22)":"0 2px 12px rgba(0,0,0,0.05)", transform:selected===id?"scale(1.03)":"scale(1)", display:"flex", flexDirection:"column", alignItems:"center", gap:18 }}>
+        <div className="layout-card-group">
+          {opts.map(([id,name,count,description,preview])=>(
+            <button key={id} className={`layout-card${selected===id ? " is-selected" : ""}`} aria-pressed={selected===id} onClick={()=>onSelect(id)}>
               {preview}
-              <div>
-                <div style={{ fontWeight:700, color:"#2D1B2E", fontSize:16, marginBottom:4 }}>{name}</div>
-                <div style={{ fontSize:13, color:"#9B7B90" }}>{desc}</div>
-              </div>
-              {selected===id&&<div style={{ width:24, height:24, borderRadius:"50%", background:"#C85B82", display:"flex", alignItems:"center", justifyContent:"center" }}><Check size={13} color="#fff" strokeWidth={3}/></div>}
+              <span className="layout-card__copy"><strong>{name}</strong><span>{count}</span><small>{description}</small></span>
+              {selected===id&&<span className="choice-check"><Check aria-hidden="true" /></span>}
             </button>
           ))}
         </div>
 
-        <button onClick={onContinue} style={{ width:"100%", padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}>
-          Next: Choose Scene →
-        </button>
-      </div>
-    </div>
+        <StudioButton block onClick={onContinue}>Next: Choose scene</StudioButton>
+      </section>
+    </main>
   )
 }
 
@@ -1241,47 +1240,41 @@ function LayoutScreen({ selected, onSelect, onContinue }:{
 // THEME SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:{
-  selected:ThemeId;selectedProp:PropId;onSelect:(t:ThemeId)=>void;onPropSelect:(p:PropId)=>void;onContinue:()=>void
+export function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue,onBack }:{
+  selected:ThemeId;selectedProp:PropId;onSelect:(t:ThemeId)=>void;onPropSelect:(p:PropId)=>void;onContinue:()=>void;onBack:()=>void
 }) {
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 20px", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="setup-screen setup-screen--theme screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:680, textAlign:"center" }}>
-        <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  2 / 3</p>
-        <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Choose your scene</h2>
-        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Choose a shared background, then pick your own optional face filter. Your partner chooses theirs separately.</p>
+      <section className="setup-screen__content" aria-labelledby="scene-title">
+        <SetupHeader step={2} title="Choose your scene" description="Choose a shared background, then pick your own optional face filter. Your partner chooses theirs separately." onBack={onBack} />
 
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(156px,1fr))", gap:12, marginBottom:24 }}>
+        <div className="scene-card-group" aria-label="Shared scene choices">
           {THEMES.map(t=>(
-            <button key={t.id} onClick={()=>onSelect(t.id)} style={{ background:t.previewBg, borderRadius:18, padding:"24px 14px", border:`2.5px solid ${selected===t.id?t.accent:"transparent"}`, cursor:"pointer", transition:"all 0.24s", boxShadow:selected===t.id?`0 4px 22px ${t.accent}55`:"0 2px 10px rgba(0,0,0,0.08)", transform:selected===t.id?"scale(1.04)":"scale(1)", display:"flex", flexDirection:"column", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:26 }}>{t.emoji}</span>
-              <span style={{ fontWeight:700, color:t.dark?"#fff":"#2D1B2E", fontSize:14 }}>{t.name}</span>
-              <span style={{ fontSize:11, color:t.dark?"rgba(255,255,255,0.62)":"#9B7B90", lineHeight:1.5 }}>{t.tagline}</span>
-              {selected===t.id&&<div style={{ width:22, height:22, borderRadius:"50%", background:t.accent, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 0 0 3px rgba(255,255,255,0.28)` }}><Check size={11} color="#fff" strokeWidth={3}/></div>}
+            <button key={t.id} className={`scene-card${selected===t.id ? " is-selected" : ""}`} aria-pressed={selected===t.id} onClick={()=>onSelect(t.id)}>
+              <img src={SCENE_PREVIEWS[t.id]} alt={`${t.name} preview`} />
+              <span className="scene-card__copy"><span className="choice-badge">Shared choice</span><strong>{t.name}</strong><small>{t.tagline}</small></span>
+              {selected===t.id&&<span className="choice-check"><Check aria-hidden="true" /></span>}
             </button>
           ))}
         </div>
 
-        <div style={{ background:"linear-gradient(145deg,rgba(255,255,255,.94),rgba(255,240,247,.82))",border:"1px solid rgba(200,91,130,.2)",borderRadius:18,padding:"18px",marginBottom:28,boxShadow:"0 12px 32px rgba(115,71,98,.1)" }}>
-          <p style={{ fontSize:11,letterSpacing:".14em",color:"#C85B82",fontWeight:900,marginBottom:12 }}>YOUR STARTING FILTER · OPTIONAL</p>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(118px,1fr))",gap:9 }}>
+        <section className="filter-panel" aria-labelledby="filter-title">
+          <div className="filter-panel__heading"><div><p id="filter-title">Your starting filter</p><span>Optional and visible only on your face.</span></div><span className="choice-badge">Only you</span></div>
+          <div className="filter-card-group" aria-label="Personal filter choices">
             {PROPS.map(prop=>(
-              <button key={prop.id} onClick={()=>onPropSelect(prop.id)} style={{ borderRadius:13,padding:"12px 6px",border:`1.5px solid ${selectedProp===prop.id?"#C85B82":"#E7D9E2"}`,background:selectedProp===prop.id?"linear-gradient(145deg,#fff,#FFF1F7)":"rgba(255,255,255,.7)",boxShadow:selectedProp===prop.id?"0 7px 18px rgba(200,91,130,.18)":"0 3px 10px rgba(59,36,68,.06)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all .16s",transform:selectedProp===prop.id?"translateY(-2px)":"none" }}>
-                <span style={{ fontSize:23,lineHeight:1,color:selectedProp===prop.id?"#C85B82":"#6C536A",textShadow:selectedProp===prop.id?"0 2px 10px rgba(200,91,130,.28)":"none" }}>{prop.emoji}</span>
-                <span style={{ fontSize:10,fontWeight:900,color:"#2D1B2E",textTransform:"uppercase",letterSpacing:".04em" }}>{prop.name}</span>
-                <span style={{ fontSize:9,color:"#9B7B90",lineHeight:1.3 }}>{prop.tagline}</span>
+              <button key={prop.id} className={`filter-card${selectedProp===prop.id ? " is-selected" : ""}`} aria-pressed={selectedProp===prop.id} aria-label={prop.name} onClick={()=>onPropSelect(prop.id)}>
+                <span className="filter-card__sprite" aria-hidden="true">{prop.id==="none"?<X />:<FilterSprite look={{propId:prop.id,variant:0}}/>}</span>
+                <span className="filter-card__copy"><strong>{prop.name}</strong><small>{prop.tagline}</small></span>
+                {selectedProp===prop.id&&<span className="choice-check"><Check aria-hidden="true" /></span>}
               </button>
             ))}
           </div>
-          <p style={{ fontSize:10,color:"#8F7287",marginTop:12 }}>Your choice follows only your face. It stays fixed until you turn it off or cycle to another look in the booth.</p>
-        </div>
+        </section>
 
-        <button onClick={onContinue} style={{ width:"100%", padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}>
-          Next: Get Ready →
-        </button>
-      </div>
-    </div>
+        <StudioButton block onClick={onContinue}>Next: Get ready</StudioButton>
+      </section>
+    </main>
   )
 }
 
@@ -1289,9 +1282,9 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
 // GET READY SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmoothingChange,onContinue }:{
+export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmoothingChange,onContinue,onBack }:{
   stream:MediaStream|null; remoteStream:MediaStream|null; tipIndex:number;
-  skinSmoothing:SkinSmoothing;onSkinSmoothingChange:(strength:SkinSmoothing)=>void;onContinue:()=>void
+  skinSmoothing:SkinSmoothing;onSkinSmoothingChange:(strength:SkinSmoothing)=>void;onContinue:()=>void;onBack:()=>void
 }) {
   const vidRef = useRef<HTMLVideoElement>(null)
   const remoteRef = useRef<HTMLVideoElement>(null)
@@ -1312,12 +1305,10 @@ function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmo
   },[remoteStream])
 
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 20px", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="setup-screen setup-screen--ready screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:580, textAlign:"center" }}>
-        <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  3 / 3</p>
-        <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Get comfortable</h2>
-        <p style={{ color:"#9B7B90", marginBottom:28, fontSize:15 }}>Check your lighting, framing, and smile — then you"re ready.</p>
+      <section className="setup-screen__content setup-screen__content--ready" aria-labelledby="ready-title">
+        <SetupHeader step={3} title="Get comfortable" description="Check your lighting, framing, and smile, then you are ready." onBack={onBack} />
 
         {/* Camera preview */}
         <div style={{ position:"relative", borderRadius:22, overflow:"hidden", background:"#111", aspectRatio:"4/3", maxWidth:380, margin:"0 auto 24px", boxShadow:"0 10px 44px rgba(0,0,0,0.18)" }}>
@@ -1357,18 +1348,15 @@ function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmo
 
         {/* Tip card */}
         <div style={{ margin:"0 auto 24px", maxWidth:400, background:"#fff", borderRadius:16, padding:"16px 22px", border:"1px solid rgba(200,91,130,0.12)", boxShadow:"0 2px 14px rgba(0,0,0,0.04)", textAlign:"left" }}>
-          <p style={{ fontSize:11, color:"#C85B82", fontWeight:700, marginBottom:6, letterSpacing:"0.1em" }}>💡  TIP {tipIndex+1} / {TIPS.length}</p>
+          <p style={{ fontSize:11, color:"#C85B82", fontWeight:700, marginBottom:6, letterSpacing:"0.1em" }}>TIP {tipIndex+1} / {TIPS.length}</p>
           <p style={{ fontSize:14, color:"#2D1B2E", lineHeight:1.65 }}>{TIPS[tipIndex]}</p>
         </div>
 
-        <button
-          onClick={onContinue} disabled={!ready}
-          style={{ padding:"15px 56px", borderRadius:16, background:ready?"linear-gradient(135deg,#C85B82,#BFA3D4)":"#e8e8e8", color:ready?"#fff":"#bbb", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:ready?"pointer":"not-allowed", boxShadow:ready?"0 6px 24px rgba(200,91,130,0.35)":"none", transition:"all 0.3s" }}
-        >
-          {ready?"We're Ready! ✦":"Waiting for camera…"}
-        </button>
-      </div>
-    </div>
+        <StudioButton block onClick={onContinue} disabled={!ready}>
+          {ready?"We're ready":"Waiting for camera…"}
+        </StudioButton>
+      </section>
+    </main>
   )
 }
 
@@ -2430,7 +2418,7 @@ export default function App() {
         {screen==="landing"  && <LandingScreen onStart={startSession}/>} 
         {screen==="room"     && <RoomScreen code={roomCode} partnerJoined={partnerJoined} copied={copied} onCopy={handleCopy} onContinue={()=>navigate("layout")}/>} 
         {screen==="layout"   && <LayoutScreen selected={layout} onSelect={chooseLayout} onContinue={()=>navigate("theme")}/>} 
-        {screen==="theme"    && <ThemeScreen selected={themeId} selectedProp={localProp.propId} onSelect={chooseTheme} onPropSelect={chooseProp} onContinue={()=>navigate("ready")}/>}
+        {screen==="theme"    && <ThemeScreen selected={themeId} selectedProp={localProp.propId} onSelect={chooseTheme} onPropSelect={chooseProp} onBack={()=>navigate("layout")} onContinue={()=>navigate("ready")}/>}
         {screen==="ready"&&(
           <GetReadyScreen
             stream={stream}
@@ -2438,6 +2426,7 @@ export default function App() {
             tipIndex={tipIdx}
             skinSmoothing={skinSmoothing}
             onSkinSmoothingChange={chooseSkinSmoothing}
+            onBack={()=>navigate("theme")}
             onContinue={()=>{ setPhotos([]);setSelected([]);navigate("booth") }}
           />
         )}

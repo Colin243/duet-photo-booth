@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { LandingScreen, RoomScreen } from './App'
+import { LandingScreen, RoomScreen, ThemeScreen } from './App'
 
 const keepsakeCss = readFileSync('src/styles/keepsake.css', 'utf8')
 
@@ -41,5 +41,43 @@ describe('landing and room', () => {
 
   it('keeps landing and room entrance motion within the approved duration', () => {
     expect(keepsakeCss).toContain('.landing.screen-enter,\n.room.screen-enter { animation-duration: 200ms; }')
+  })
+})
+
+describe('setup selection', () => {
+  it('provides a back action from scene selection', async () => {
+    const onBack = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <ThemeScreen
+        selected="classic"
+        selectedProp="none"
+        onSelect={vi.fn()}
+        onPropSelect={vi.fn()}
+        onContinue={vi.fn()}
+        onBack={onBack}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+
+    expect(onBack).toHaveBeenCalledOnce()
+  })
+
+  it('shows the selected real filter sprite and scene preview', () => {
+    render(
+      <ThemeScreen
+        selected="washer"
+        selectedProp="catEars"
+        onSelect={vi.fn()}
+        onPropSelect={vi.fn()}
+        onContinue={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'XMM Pixel Set' })).toBePressed()
+    expect(screen.getByRole('img', { name: 'Washer POV preview' })).toBeInTheDocument()
   })
 })
