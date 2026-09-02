@@ -81,14 +81,14 @@ export function StatusPanel({ tone = 'info', title, children }: StatusPanelProps
   )
 }
 
-type SegmentedControlProps<T extends string> = {
+type SegmentedControlProps<T extends string | number> = {
   label: string
   value: T
   options: readonly { value: T; label: string }[]
   onChange: (value: T) => void
 }
 
-export function SegmentedControl<T extends string>({
+export function SegmentedControl<T extends string | number>({
   label,
   value,
   options,

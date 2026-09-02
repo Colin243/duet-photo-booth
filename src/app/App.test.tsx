@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, ThemeScreen } from './App'
@@ -180,5 +180,49 @@ describe('camera recovery', () => {
     await waitFor(() => expect(play).toHaveBeenCalled())
     expect(screen.getByRole('button', { name: 'Waiting for camera…' })).toBeDisabled()
     play.mockRestore()
+  })
+
+  it('waits for the latest preview to play after a stale preview completes', async () => {
+    let resolveFirstPlay: (() => void) | undefined
+    let resolveSecondPlay: (() => void) | undefined
+    const firstPlay = new Promise<void>(resolve => { resolveFirstPlay = resolve })
+    const secondPlay = new Promise<void>(resolve => { resolveSecondPlay = resolve })
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play')
+      .mockImplementationOnce(() => firstPlay)
+      .mockImplementationOnce(() => secondPlay)
+    const firstStream = { getTracks: () => [] } as unknown as MediaStream
+    const secondStream = { getTracks: () => [] } as unknown as MediaStream
+    const props = {
+      remoteStream: null,
+      tipIndex: 0,
+      skinSmoothing: 0 as const,
+      cameraStatus: { phase: 'ready' as const },
+      onSkinSmoothingChange: vi.fn(),
+      onRetryCamera: vi.fn(),
+      onContinue: vi.fn(),
+      onBack: vi.fn(),
+    }
+
+    try {
+      const view = render(<GetReadyScreen stream={firstStream} {...props} />)
+      await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
+
+      view.rerender(<GetReadyScreen stream={secondStream} {...props} />)
+      await waitFor(() => expect(play).toHaveBeenCalledTimes(2))
+
+      await act(async () => {
+        resolveFirstPlay?.()
+        await firstPlay
+      })
+      expect(screen.getByRole('button', { name: 'Waiting for camera…' })).toBeDisabled()
+
+      await act(async () => {
+        resolveSecondPlay?.()
+        await secondPlay
+      })
+      expect(screen.getByRole('button', { name: "We're ready" })).toBeEnabled()
+    } finally {
+      play.mockRestore()
+    }
   })
 })

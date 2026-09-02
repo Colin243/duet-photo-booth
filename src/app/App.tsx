@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { BrandMark, SegmentedControl, SetupHeader, StatusPanel, StudioButton } from "./ui/StudioUI"
 import { classifyCameraFailure, type CameraStatus } from "./ui/cameraStatus"
+import { createCameraRequestGuard, stopMediaStream } from "./ui/cameraLifecycle"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL CSS
@@ -118,10 +119,7 @@ type PropLook = { propId:PropId; variant:number }
 type SkinSmoothing = 0|1|2
 type ParticipantId = "p1"|"p2"
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
-
-function stopMediaStream(stream: MediaStream|null) {
-  stream?.getTracks().forEach(track=>track.stop())
-}
+type CustomCssProperties = React.CSSProperties & { "--thumb-color": string }
 type LandmarkMotionFilterState = {
   timestamp:number
   raw:NormalizedLandmark[]
@@ -1297,11 +1295,18 @@ export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,ca
   const [hasPlayed, setHasPlayed] = useState(false)
 
   useEffect(()=>{
+    let active=true
     setHasPlayed(false)
     if(stream&&vidRef.current){
-      vidRef.current.srcObject=stream
-      void vidRef.current.play().then(()=>setHasPlayed(true)).catch(()=>setHasPlayed(false))
+      const video=vidRef.current
+      video.srcObject=stream
+      void video.play().then(()=>{
+        if(active&&video.srcObject===stream) setHasPlayed(true)
+      }).catch(()=>{
+        if(active&&video.srcObject===stream) setHasPlayed(false)
+      })
     }
+    return ()=>{ active=false }
   },[stream])
 
   useEffect(()=>{
@@ -1431,8 +1436,8 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
   const faceTimestampRef=useRef(0)
   const faceBusyRef=useRef(false)
   const facePartnerNextRef=useRef(false)
-  const rafRef      = useRef<number>()
-  const timerRef    = useRef<ReturnType<typeof setInterval>>()
+  const rafRef      = useRef<number|undefined>(undefined)
+  const timerRef    = useRef<ReturnType<typeof setInterval>|undefined>(undefined)
   const [photos, setPhotos]     = useState<string[]>([])
   const [countdown, setCountdown] = useState<number|null>(null)
   const [flashing, setFlashing]   = useState(false)
@@ -1760,7 +1765,7 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
         {/* Proximity */}
         <div style={{ display:"flex", alignItems:"center", gap:12, background:isDark?"rgba(255,255,255,0.06)":"rgba(255,255,255,0.85)", backdropFilter:"blur(12px)", borderRadius:50, padding:"10px 22px", border:`1px solid ${isDark?"rgba(255,255,255,0.09)":"rgba(200,91,130,0.14)"}` }}>
           <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>← Further</span>
-          <input type="range" min={0} max={100} value={proximity} onChange={e=>setProximity(Number(e.target.value))} style={{ width:130, "--thumb-color":acc, accentColor:acc } as React.CSSProperties & Record<string,string>}/>
+          <input type="range" min={0} max={100} value={proximity} onChange={e=>setProximity(Number(e.target.value))} style={{ width:130, "--thumb-color":acc, accentColor:acc } as CustomCssProperties}/>
           <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>Closer →</span>
         </div>
 
@@ -1768,7 +1773,7 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
           <span style={{ fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",whiteSpace:"nowrap" }}>YOUR SIZE</span>
           <span style={{ fontSize:11,color:sub,fontWeight:700,whiteSpace:"nowrap" }}>Smaller</span>
           <button onClick={()=>onLocalScaleChange((localScalePercent-5)/100)} disabled={localScalePercent<=80} aria-label="Make yourself smaller" style={{ width:26,height:26,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:16,fontWeight:900,cursor:localScalePercent<=80?"default":"pointer",opacity:localScalePercent<=80?.38:1,display:"grid",placeItems:"center",padding:0 }}>−</button>
-          <input aria-label="Your size" type="range" min={80} max={120} step={1} value={localScalePercent} onChange={event=>onLocalScaleChange(Number(event.target.value)/100)} style={{ width:112,"--thumb-color":acc,accentColor:acc } as React.CSSProperties & Record<string,string>}/>
+          <input aria-label="Your size" type="range" min={80} max={120} step={1} value={localScalePercent} onChange={event=>onLocalScaleChange(Number(event.target.value)/100)} style={{ width:112,"--thumb-color":acc,accentColor:acc } as CustomCssProperties}/>
           <button onClick={()=>onLocalScaleChange((localScalePercent+5)/100)} disabled={localScalePercent>=120} aria-label="Make yourself larger" style={{ width:26,height:26,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:15,fontWeight:900,cursor:localScalePercent>=120?"default":"pointer",opacity:localScalePercent>=120?.38:1,display:"grid",placeItems:"center",padding:0 }}>+</button>
           <span style={{ fontSize:11,color:sub,fontWeight:700,whiteSpace:"nowrap" }}>Larger</span>
           <button onClick={()=>onLocalScaleChange(1)} aria-label="Reset your size to normal" title="Reset to normal" style={{ minWidth:58,height:30,borderRadius:18,border:`1px solid ${localScalePercent===100?acc:isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:localScalePercent===100?acc:"transparent",color:localScalePercent===100?"#fff":fg,fontFamily:"'Nunito',sans-serif",fontSize:10,fontWeight:900,cursor:"pointer",padding:"0 9px" }}>
@@ -2173,6 +2178,23 @@ export default function App() {
   const frontRef=useRef<ParticipantId>(frontParticipant)
   const filterRef=useRef<PropLook>(localProp)
   const participantScaleRef=useRef(localParticipantScale)
+  const streamRef=useRef<MediaStream|null>(null)
+
+  const acceptCameraStream=useCallback((nextStream:MediaStream)=>{
+    streamRef.current=nextStream
+    setStream(nextStream)
+  },[])
+
+  const stopCurrentCamera=useCallback(()=>{
+    stopMediaStream(streamRef.current)
+    streamRef.current=null
+    setStream(null)
+  },[])
+
+  useEffect(()=>()=>{
+    stopMediaStream(streamRef.current)
+    streamRef.current=null
+  },[])
 
   useEffect(()=>{ syncRef.current={screen,layout,themeId} },[screen,layout,themeId])
   useEffect(()=>{ beautyRef.current=skinSmoothing },[skinSmoothing])
@@ -2226,10 +2248,7 @@ export default function App() {
   }
 
   const retryCamera=()=>{
-    setStream(current=>{
-      stopMediaStream(current)
-      return null
-    })
+    stopCurrentCamera()
     setCameraStatus({phase:"requesting"})
     setCameraRequest(value=>value+1)
   }
@@ -2289,17 +2308,14 @@ export default function App() {
 
   // Camera lifecycle
   useEffect(()=>{
-    let active=true
+    const request=createCameraRequestGuard()
     if(screen!=="ready"&&screen!=="booth"){
       setCameraStatus({phase:"idle"})
-      setStream(current=>{
-        stopMediaStream(current)
-        return null
-      })
-      return ()=>{ active=false }
+      stopCurrentCamera()
+      return ()=>{ request.cancel() }
     }
 
-    if(stream) return ()=>{ active=false }
+    if(stream) return ()=>{ request.cancel() }
 
     setCameraStatus({phase:"requesting"})
     const demoParticipant=import.meta.env.DEV?new URLSearchParams(window.location.search).get("demo"):null
@@ -2312,19 +2328,17 @@ export default function App() {
 
     void cameraPromise
       .then(nextStream=>{
-        if(!active){
-          stopMediaStream(nextStream)
-          return
-        }
-        setStream(nextStream)
-        setCameraStatus({phase:"ready"})
+        request.accept(nextStream,acceptedStream=>{
+          acceptCameraStream(acceptedStream)
+          setCameraStatus({phase:"ready"})
+        })
       })
       .catch(error=>{
-        if(active) setCameraStatus(classifyCameraFailure(error))
+        request.reject(error,reason=>setCameraStatus(classifyCameraFailure(reason)))
       })
 
-    return ()=>{ active=false }
-  },[screen,cameraRequest,stream])
+    return ()=>{ request.cancel() }
+  },[screen,cameraRequest,stream,acceptCameraStream,stopCurrentCamera])
 
   // Once both cameras are ready, the guest calls the host. The host answers with its stream.
   useEffect(()=>{
@@ -2440,9 +2454,9 @@ export default function App() {
 
   const handleStartAgain=()=>{
     dataRef.current?.close(); mediaRef.current?.close(); peerRef.current?.destroy()
-    stream?.getTracks().forEach(track=>track.stop())
+    stopCurrentCamera()
     setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle")
-    setRemoteStream(null); setCaptureAt(null); setStream(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setLocalProp({propId:"none",variant:0});setPartnerProp({propId:"none",variant:0});setLocalParticipantScale(1);setPartnerParticipantScale(1);setFrontParticipant("p1")
+    setRemoteStream(null); setCaptureAt(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setLocalProp({propId:"none",variant:0});setPartnerProp({propId:"none",variant:0});setLocalParticipantScale(1);setPartnerParticipantScale(1);setFrontParticipant("p1")
     window.history.replaceState({},"",window.location.pathname)
     setScreen("landing")
   }
