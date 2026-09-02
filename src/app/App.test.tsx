@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import App, { type CameraLifecycleTestHandle, GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, ThemeScreen } from './App'
+import App, { type CameraLifecycleTestHandle, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, ThemeScreen } from './App'
 
 vi.mock('peerjs', () => {
   class MockConnection {
@@ -29,6 +29,15 @@ vi.mock('peerjs', () => {
 })
 
 const keepsakeCss = readFileSync('src/styles/keepsake.css', 'utf8')
+
+describe('booth progress', () => {
+  it('clamps capture progress to the ten-photo session boundary', () => {
+    expect(getCaptureProgress(-1)).toBe('0 of 10')
+    expect(getCaptureProgress(0)).toBe('0 of 10')
+    expect(getCaptureProgress(10)).toBe('10 of 10')
+    expect(getCaptureProgress(11)).toBe('10 of 10')
+  })
+})
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => undefined

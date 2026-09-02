@@ -1392,6 +1392,9 @@ export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,ca
 // BOOTH SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
+// eslint-disable-next-line react-refresh/only-export-components
+export const getCaptureProgress = (count: number) => `${Math.max(0, Math.min(10, count))} of 10`
+
 function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinSmoothing,partnerSkinSmoothing,localParticipantScale,partnerParticipantScale,frontParticipant,localParticipant,layout,captureAt,onLocalPropChange,onLocalScaleChange,onFrontParticipantChange,onCaptureRequest,onPhotoCapture,onDone }:{
   stream:MediaStream|null;remoteStream:MediaStream|null;themeId:ThemeId;localProp:PropLook;partnerProp:PropLook;
   skinSmoothing:SkinSmoothing;partnerSkinSmoothing:SkinSmoothing;localParticipantScale:number;partnerParticipantScale:number;frontParticipant:ParticipantId;localParticipant:ParticipantId;layout:Layout;captureAt:number|null;
@@ -1574,7 +1577,7 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
       if(supportCanvas.height!==height) supportCanvas.height=height
       renderLandmarkSupport(supportCanvas,poseRef.current,hands)
       const values=mask.getAsFloat32Array()
-      const supportPixels=supportCanvas.getContext("2d")!.getImageData(0,0,width,height).data
+      const supportPixels=supportCanvas.getContext("2d", { willReadFrequently: true })!.getImageData(0,0,width,height).data
       const pixels=new Uint8ClampedArray(width*height*4)
       const matteAlpha=new Uint8ClampedArray(width*height)
       for(let i=0;i<values.length;i++){
@@ -1716,30 +1719,34 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
   const sub  = isDark?"rgba(255,255,255,0.45)":"#9B7B90"
   const acc  = isDark?theme.accent:"#C85B82"
   const localScalePercent=Math.round(localParticipantScale*100)
+  const boothClassName = `booth studio-screen booth--${themeId}`
+  const consoleRowClassName = (name: 'proximity' | 'size' | 'priority') => `booth-console__row booth-console__row--${name}`
 
   return (
-    <div style={{ minHeight:"100vh", background:bg, display:"flex", flexDirection:"column", fontFamily:"'Nunito',sans-serif", position:"relative", overflowX:"hidden", overflowY:"auto" }}>
+    <main className={boothClassName} style={{ minHeight:"100vh", background:bg, display:"flex", flexDirection:"column", fontFamily:"'Nunito',sans-serif", position:"relative", overflowX:"hidden", overflowY:"auto" }}>
       <div className="grain-overlay" />
-      {flashing&&<div style={{ position:"fixed", inset:0, background:"#fff", zIndex:9999, animation:"flashOut 0.3s ease forwards", pointerEvents:"none" }}/>}
 
       <video ref={vidRef} autoPlay playsInline muted style={{ display:"none" }}/>
       <video ref={partnerRef} autoPlay playsInline style={{ display:"none" }}/>
       <canvas ref={captureRef} width={800} height={528} style={{ display:"none" }}/>
 
       {/* Header */}
-      <div style={{ position:"relative", zIndex:10, padding:"14px 24px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-        <span style={{ fontSize:12, color:acc, fontWeight:700, letterSpacing:"0.12em" }}>duet ♡</span>
-        <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-          {Array.from({length:MAX},(_,i)=>(
-            <div key={i} style={{ height:7, width:i<photos.length?18:7, borderRadius:4, background:i<photos.length?acc:isDark?"rgba(255,255,255,0.1)":"rgba(200,91,130,0.14)", transition:"all 0.35s" }}/>
-          ))}
+      <header className="booth__header" style={{ position:"relative", zIndex:10, padding:"14px 24px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <span style={{ fontSize:12, color:acc, fontWeight:700, letterSpacing:"0.12em" }}>duet</span>
+        <div className="booth-progress">
+          <span>{getCaptureProgress(photos.length)}</span>
+          <div className="booth-progress__segments" aria-hidden="true">
+            {Array.from({length:MAX},(_,i)=>(
+              <span key={i} className={i<photos.length?"is-complete":""} style={{ "--progress-accent":acc } as React.CSSProperties & { "--progress-accent": string }}/>
+            ))}
+          </div>
         </div>
-        <span style={{ fontSize:12, color:sub, fontWeight:600 }}>{photos.length}/{MAX}</span>
-      </div>
+      </header>
 
       {/* Canvas */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"safe center", padding:"0 14px 24px", gap:14, position:"relative", zIndex:10 }}>
-        <div style={{ position:"relative", borderRadius:22, overflow:"hidden", boxShadow:isDark?`0 0 0 2px ${theme.accent}44,0 18px 60px rgba(0,0,0,0.65)`:"0 10px 50px rgba(0,0,0,0.13)", maxWidth:760, width:"100%" }}>
+      <section className="booth__camera" aria-label="Live booth preview" style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"safe center", padding:"0 14px 24px", gap:14, position:"relative", zIndex:10 }}>
+        {flashing&&<div style={{ position:"fixed", inset:0, background:"#fff", zIndex:9999, animation:"flashOut 0.3s ease forwards", pointerEvents:"none" }}/>}
+        <div className="booth__camera-frame" style={{ position:"relative", borderRadius:22, overflow:"hidden", boxShadow:isDark?`0 0 0 2px ${theme.accent}44,0 18px 60px rgba(0,0,0,0.65)`:"0 10px 50px rgba(0,0,0,0.13)", maxWidth:760, width:"100%" }}>
           <canvas ref={previewRef} width={760} height={500} style={{ display:"block", width:"100%", aspectRatio:"760/500", borderRadius:22 }}/>
 
           {/* You / Partner labels */}
@@ -1767,54 +1774,59 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
             </div>
           )}
         </div>
+      </section>
 
+      <section className="booth-console" aria-label="Booth controls">
         {/* Proximity */}
-        <div style={{ display:"flex", alignItems:"center", gap:12, background:isDark?"rgba(255,255,255,0.06)":"rgba(255,255,255,0.85)", backdropFilter:"blur(12px)", borderRadius:50, padding:"10px 22px", border:`1px solid ${isDark?"rgba(255,255,255,0.09)":"rgba(200,91,130,0.14)"}` }}>
-          <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>← Further</span>
-          <input type="range" min={0} max={100} value={proximity} onChange={e=>setProximity(Number(e.target.value))} style={{ width:130, "--thumb-color":acc, accentColor:acc } as CustomCssProperties}/>
-          <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>Closer →</span>
+        <div className={consoleRowClassName('proximity')} style={{ display:"flex", alignItems:"center", gap:12, background:isDark?"rgba(255,255,255,0.06)":"rgba(255,255,255,0.85)", backdropFilter:"blur(12px)", borderRadius:50, padding:"10px 22px", border:`1px solid ${isDark?"rgba(255,255,255,0.09)":"rgba(200,91,130,0.14)"}` }}>
+          <label htmlFor="booth-proximity" style={{ fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",whiteSpace:"nowrap" }}>Togetherness</label>
+          <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>Further</span>
+          <input id="booth-proximity" type="range" min={0} max={100} value={proximity} onChange={e=>setProximity(Number(e.target.value))} style={{ width:130, "--thumb-color":acc, accentColor:acc } as CustomCssProperties}/>
+          <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>Closer</span>
         </div>
 
-        <div style={{ display:"flex",alignItems:"center",gap:9,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 10px 7px 14px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.05)" }}>
+        <div className={consoleRowClassName('size')} style={{ display:"flex",alignItems:"center",gap:9,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 10px 7px 14px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.05)" }}>
           <span style={{ fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",whiteSpace:"nowrap" }}>YOUR SIZE</span>
           <span style={{ fontSize:11,color:sub,fontWeight:700,whiteSpace:"nowrap" }}>Smaller</span>
-          <button onClick={()=>onLocalScaleChange((localScalePercent-5)/100)} disabled={localScalePercent<=80} aria-label="Make yourself smaller" style={{ width:26,height:26,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:16,fontWeight:900,cursor:localScalePercent<=80?"default":"pointer",opacity:localScalePercent<=80?.38:1,display:"grid",placeItems:"center",padding:0 }}>−</button>
-          <input aria-label="Your size" type="range" min={80} max={120} step={1} value={localScalePercent} onChange={event=>onLocalScaleChange(Number(event.target.value)/100)} style={{ width:112,"--thumb-color":acc,accentColor:acc } as CustomCssProperties}/>
-          <button onClick={()=>onLocalScaleChange((localScalePercent+5)/100)} disabled={localScalePercent>=120} aria-label="Make yourself larger" style={{ width:26,height:26,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:15,fontWeight:900,cursor:localScalePercent>=120?"default":"pointer",opacity:localScalePercent>=120?.38:1,display:"grid",placeItems:"center",padding:0 }}>+</button>
+          <button onClick={()=>onLocalScaleChange((localScalePercent-5)/100)} disabled={localScalePercent<=80} aria-label="Make yourself smaller" style={{ width:44,height:44,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:16,fontWeight:900,cursor:localScalePercent<=80?"default":"pointer",opacity:localScalePercent<=80?.38:1,display:"grid",placeItems:"center",padding:0 }}>−</button>
+          <input aria-label="Your size" aria-valuetext={`${localScalePercent}%`} type="range" min={80} max={120} step={1} value={localScalePercent} onChange={event=>onLocalScaleChange(Number(event.target.value)/100)} style={{ width:112,"--thumb-color":acc,accentColor:acc } as CustomCssProperties}/>
+          <button onClick={()=>onLocalScaleChange((localScalePercent+5)/100)} disabled={localScalePercent>=120} aria-label="Make yourself larger" style={{ width:44,height:44,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:15,fontWeight:900,cursor:localScalePercent>=120?"default":"pointer",opacity:localScalePercent>=120?.38:1,display:"grid",placeItems:"center",padding:0 }}>+</button>
           <span style={{ fontSize:11,color:sub,fontWeight:700,whiteSpace:"nowrap" }}>Larger</span>
-          <button onClick={()=>onLocalScaleChange(1)} aria-label="Reset your size to normal" title="Reset to normal" style={{ minWidth:58,height:30,borderRadius:18,border:`1px solid ${localScalePercent===100?acc:isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:localScalePercent===100?acc:"transparent",color:localScalePercent===100?"#fff":fg,fontFamily:"'Nunito',sans-serif",fontSize:10,fontWeight:900,cursor:"pointer",padding:"0 9px" }}>
-            {localScalePercent===100?"NORMAL":`${localScalePercent}%`}
+          <button onClick={()=>onLocalScaleChange(1)} aria-label="Normal size" title="Normal size" style={{ minWidth:76,minHeight:44,borderRadius:18,border:`1px solid ${localScalePercent===100?acc:isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:localScalePercent===100?acc:"transparent",color:localScalePercent===100?"#fff":fg,fontFamily:"'Nunito',sans-serif",fontSize:10,fontWeight:900,cursor:"pointer",padding:"0 9px" }}>
+            {localScalePercent===100?"NORMAL SIZE":`${localScalePercent}%`}
           </button>
         </div>
 
-        <div style={{ width:"min(100%,620px)",display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"wrap",gap:7,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(200,91,130,.16)"}`,borderRadius:22,padding:"9px 10px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.06)" }}>
+        <div className="booth-console__filters" style={{ width:"min(100%,620px)",display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"wrap",gap:7,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(200,91,130,.16)"}`,borderRadius:22,padding:"9px 10px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.06)" }}>
           <span style={{ width:"100%",textAlign:"center",fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",marginBottom:1 }}>YOUR FILTER · TAP A SPRITE</span>
-          <button onClick={()=>onLocalPropChange({propId:"none",variant:0})} aria-label="Remove filter" title="Remove filter" aria-pressed={localProp.propId==="none"} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${localProp.propId==="none"?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:localProp.propId==="none"?`${acc}18`:"transparent",color:localProp.propId==="none"?acc:sub,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:localProp.propId==="none"?`0 5px 14px ${acc}25`:"none" }}>
-            <X size={20} strokeWidth={2.7}/>
-          </button>
-          {PROP_LOOKS.map(look=>{
-            const selected=look.propId===localProp.propId&&look.variant===localProp.variant
-            return <button key={`${look.propId}-${look.variant}`} onClick={()=>onLocalPropChange({propId:look.propId,variant:look.variant})} aria-label={look.name} title={look.name} aria-pressed={selected} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${selected?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:selected?`${acc}18`:isDark?"rgba(255,255,255,.025)":"#fff",color:fg,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:selected?`0 5px 14px ${acc}28`:"none",transform:selected?"translateY(-2px)":"none",transition:"transform .16s ease,border-color .16s ease,box-shadow .16s ease" }}>
-              <FilterSprite look={look}/>
-              {selected&&(
-                <span style={{ position:"absolute",right:4,top:4,width:7,height:7,borderRadius:"50%",background:acc,boxShadow:"0 0 0 2px #fff" }}/>
-              )}
+          <div className="booth-console__filter-sprites">
+            <button onClick={()=>onLocalPropChange({propId:"none",variant:0})} aria-label="Remove filter" title="Remove filter" aria-pressed={localProp.propId==="none"} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${localProp.propId==="none"?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:localProp.propId==="none"?`${acc}18`:"transparent",color:localProp.propId==="none"?acc:sub,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:localProp.propId==="none"?`0 5px 14px ${acc}25`:"none" }}>
+              <X size={20} strokeWidth={2.7}/>
             </button>
-          })}
+            {PROP_LOOKS.map(look=>{
+              const selected=look.propId===localProp.propId&&look.variant===localProp.variant
+              return <button key={`${look.propId}-${look.variant}`} onClick={()=>onLocalPropChange({propId:look.propId,variant:look.variant})} aria-label={look.name} title={look.name} aria-pressed={selected} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${selected?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:selected?`${acc}18`:isDark?"rgba(255,255,255,.025)":"#fff",color:fg,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:selected?`0 5px 14px ${acc}28`:"none",transform:selected?"translateY(-2px)":"none",transition:"transform .16s ease,border-color .16s ease,box-shadow .16s ease" }}>
+                <FilterSprite look={look}/>
+                {selected&&(
+                  <span style={{ position:"absolute",right:4,top:4,width:7,height:7,borderRadius:"50%",background:acc,boxShadow:"0 0 0 2px #fff" }}/>
+                )}
+              </button>
+            })}
+          </div>
         </div>
 
-        <div style={{ display:"flex",alignItems:"center",gap:8,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.86)",border:`1px solid ${isDark?"rgba(255,255,255,.09)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 9px 7px 14px",backdropFilter:"blur(12px)" }}>
-          <span style={{ fontSize:11,color:sub,fontWeight:800,letterSpacing:".06em",marginRight:2 }}>FRONT PERSON</span>
+        <fieldset className={consoleRowClassName('priority')} style={{ display:"flex",alignItems:"center",gap:8,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.86)",border:`1px solid ${isDark?"rgba(255,255,255,.09)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 9px 7px 14px",backdropFilter:"blur(12px)" }}>
+          <legend style={{ fontSize:11,color:sub,fontWeight:800,letterSpacing:".06em",marginRight:2 }}>Front person</legend>
           {(["p1","p2"] as ParticipantId[]).map(participant=>{
             const isYou=participant===localParticipant
             return <button key={participant} onClick={()=>onFrontParticipantChange(participant)} aria-pressed={frontParticipant===participant} style={{ borderRadius:30,border:`1px solid ${frontParticipant===participant?acc:isDark?"rgba(255,255,255,.12)":"#D9E5EA"}`,padding:"7px 11px",background:frontParticipant===participant?acc:"transparent",color:frontParticipant===participant?"#fff":fg,fontFamily:"'Nunito',sans-serif",fontSize:11,fontWeight:900,cursor:"pointer",boxShadow:frontParticipant===participant?`0 4px 13px ${acc}45`:"none" }}>
               {participant.toUpperCase()} · {isYou?"You":"Partner"}
             </button>
           })}
-        </div>
+        </fieldset>
 
-        <div style={{ fontSize:11, color:segmentStatus==="error"?"#ef4444":sub, fontWeight:600 }}>
-          {segmentStatus==="error"?"Body tracking could not load — refresh to retry":masksReady?"Low-latency face mesh + body tracking ready ✓":"Preparing face and body tracking…"}
+        <div role="status" aria-live="polite" style={{ fontSize:11, color:segmentStatus==="error"?"#ef4444":sub, fontWeight:600 }}>
+          {segmentStatus==="error"?"Body tracking could not load. Refresh to retry.":masksReady?"Low-latency face mesh and body tracking ready.":"Preparing face and body tracking…"}
         </div>
 
         {/* Thumbnails */}
@@ -1827,14 +1839,11 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
             ))}
           </div>
         )}
-      </div>
+        <div className="booth__shutter" style={{ position:"relative", zIndex:10, padding:"16px 24px 36px", display:"flex", alignItems:"center", justifyContent:"center", gap:20 }}>
+          <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{!remoteStream?"Waiting for partner’s live camera":!masksReady?"Tracking bodies, arms, and hands":photos.length<MAX?"Ready for the next moment":"All ten captured"}</div>
 
-      {/* Controls */}
-      <div style={{ position:"relative", zIndex:10, padding:"16px 24px 36px", display:"flex", alignItems:"center", justifyContent:"center", gap:20 }}>
-        <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{!remoteStream?"Waiting for partner’s live camera":!masksReady?"Tracking bodies, arms, and hands":photos.length<MAX?`${MAX-photos.length} moment${MAX-photos.length===1?"":"s"} left`:"All ten captured"}</div>
-
-        {/* Shutter */}
-        <button
+          {/* Shutter */}
+          <button
           onClick={canShoot?onCaptureRequest:undefined}
           disabled={!canShoot}
           aria-label="Capture photo"
@@ -1845,13 +1854,14 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
           <div style={{ width:28, height:28, borderRadius:"50%", background:"rgba(255,255,255,0.92)" }}/>
         </button>
 
-        {photos.length>=MAX&&(
-          <button onClick={onDone} style={{ padding:"12px 24px", borderRadius:50, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:14, border:"none", cursor:"pointer", boxShadow:"0 4px 18px rgba(200,91,130,0.4)" }}>
-            Done →
-          </button>
-        )}
-      </div>
-    </div>
+          {photos.length>=MAX&&(
+            <button onClick={onDone} style={{ minHeight:44, padding:"12px 24px", borderRadius:50, background:acc, color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:14, border:"none", cursor:"pointer", boxShadow:"0 4px 18px rgba(200,91,130,0.4)" }}>
+              Done
+            </button>
+          )}
+        </div>
+      </section>
+    </main>
   )
 }
 
