@@ -148,3 +148,86 @@ contains application code and documentation only.
 
 The Vercel project tracks the repository's `main` branch, so an accepted push
 automatically creates the next production deployment.
+
+## Keepsake Studio redesign QA — 2026-09-02
+
+The completed Keepsake Studio pass uses the warm ivory, ink-plum, dusty-berry,
+and pastel-blue direction across the landing, room, setup, booth, selection,
+customization, development, and reveal flow. The responsive pass keeps the
+mobile shell, editor tool tray, booth controls, focus treatment, and
+reduced-motion CSS within the presentation boundary. Camera requests remain
+recoverable and typed, and the repeated-readback context hint remains limited
+to the existing canvas readback boundary.
+
+The MediaPipe model, landmarks, segmentation/mask cleanup, filter anchoring,
+participant normalization, priority compositing, capture timing, and output
+geometry were not changed during final QA. A paired synthetic-camera Washer
+run used `demo=p1` and `demo=p2` with `demoPose=upper`, `demoOverlap=1`, and
+`demoMotion=1`: host/guest connection, shared Back/forward, Wide layout,
+Washer scene, distinct filters and smoothing, proximity endpoints, size
+controls (80/100/120), both front-person choices, tracking, and all ten
+captures were exercised. Six photos were selected; every frame and output
+filter choice, all customization tabs, sticker pointer drag, names/date,
+development, reveal, PNG download, Share invocation, and Start again were
+exercised. The browser confirmed a completed local PNG download and Start
+again reset the URL to the path with no room/demo query, photos, preferences,
+room/role state, and local streams.
+
+The paired-browser keyboard-removal attempt did not achieve focus on the
+injected sticker, so browser evidence does not claim Space/Enter removal.
+Existing deterministic component coverage in `src/app/App.test.tsx` covers
+both keys. This is a harness-evidence limitation, not a reproduced product
+defect.
+
+The required local QA images and manifest are intentionally ignored at
+`local-reviews/keepsake-studio-redesign-2026-09-02/`. Washer, Classic, and
+Elevator each have a paired upper-body/overlap/motion runtime capture with
+tracking-ready state and one confirmed photo. Across those visual comparisons,
+the filter anchors, equal baseline normalization before size changes,
+arms/overlap ordering, Washer inward-facing framing, edge cleanup, capture
+dimensions, and scene geometry remained within the protected CV boundary. The
+browser's reduced-motion emulation resolved animation and transition duration
+to `1e-05s`; 390px document width matched its client width with no horizontal
+overflow. Console output contained the allowed upstream MediaPipe XNNPACK
+delegate diagnostics, plus one external PeerJS signaling disconnect/503 during
+the separate Classic follow-on session; no application-owned exception or
+asset/request failure was reproduced.
+
+Final release gate on 2026-09-02: `npm run check` completed typecheck, ESLint,
+Vitest (4 files, 38 tests), and Vite build successfully. No push, deployment,
+merge, or CV change was made.
+
+### Final lifecycle/accessibility review — 2026-09-02
+
+The final review found two asynchronous ownership gaps outside the protected CV
+pipeline. Camera API property access occurred before a promise existed, so a
+browser without `mediaDevices` or `getUserMedia` could throw synchronously and
+leave the ready UI requesting. Camera acquisition now begins inside the
+existing promise chain, so the unchanged request guard classifies that failure
+into the recoverable Retry UI and still rejects stale requests safely.
+
+Download completion now carries an App-owned generation token. A new download,
+new strip/session, navigation away from reveal, Start again, and unmount all
+invalidate the prior generation; only the current operation can publish done
+or error feedback. This changes neither the PNG drawing/output bytes nor the
+PeerJS contracts.
+
+Inbound PeerJS `STATE` navigation now performs the same download invalidation
+before changing screens and resets hidden download feedback to idle. This
+prevents a partner-driven transition away from reveal from letting a late
+download resolve or reject contaminate a later reveal/session.
+
+Focused TDD evidence: the first `npx vitest run src/app/App.test.tsx` run was
+RED with the expected synchronous `mediaDevices.getUserMedia` TypeError, no
+download lifecycle handle/ownership boundary, and missing 44px/200ms CSS
+contracts. After the smallest boundary fixes, the same focused run was GREEN:
+34 tests passed. A final peer-driven lifecycle RED/GREEN pass added two
+inbound-`STATE` deferred-download regressions; the focused suite then passed
+36 tests. It includes missing-camera Retry UI, deferred download resolve and
+reject after Start again or partner navigation, current download success,
+sticker hit-area contracts, and screen-entry duration. Placed sticker controls now have a
+transparent 44px target centered on the unchanged 17px visual emoji, preserving
+the existing preview position and generated-strip coordinates. The base
+`.screen-enter` duration is 200ms; the existing reduced-motion override is
+unchanged. No browser rerun was needed for these deterministic lifecycle/CSS
+checks; the automated component suite exercised the affected runtime paths.

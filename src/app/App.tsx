@@ -6,9 +6,12 @@ import {
 } from "@mediapipe/tasks-vision"
 import { downloadStrip } from "../lib/downloadStrip"
 import {
-  Camera, Download, Share2, RotateCcw, Check, Copy, X,
-  Move,
+  Aperture, Camera, Download, Share2, RotateCcw, Check, Copy, X,
+  Frame, ImageIcon, Move, ShieldCheck, Sticker, Type,
 } from "lucide-react"
+import { BrandMark, SegmentedControl, SetupHeader, StatusPanel, StudioButton } from "./ui/StudioUI"
+import { classifyCameraFailure, type CameraStatus } from "./ui/cameraStatus"
+import { createCameraRequestGuard, stopMediaStream } from "./ui/cameraLifecycle"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL CSS
@@ -92,7 +95,7 @@ const GLOBAL_CSS = `
     mix-blend-mode:multiply;
   }
 
-  .screen-enter { animation:fadeInUp 0.42s cubic-bezier(0.22,1,0.36,1) both; }
+  .screen-enter { animation:fadeInUp 200ms cubic-bezier(0.22,1,0.36,1) both; }
 
   input[type=range]{ -webkit-appearance:none; appearance:none; height:4px; border-radius:2px; outline:none; cursor:pointer; }
   input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--thumb-color,#C85B82); cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.2); }
@@ -116,6 +119,21 @@ type PropLook = { propId:PropId; variant:number }
 type SkinSmoothing = 0|1|2
 type ParticipantId = "p1"|"p2"
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
+type CustomCssProperties = React.CSSProperties & { "--thumb-color": string }
+type FrameSwatchProperties = React.CSSProperties & { "--swatch": string }
+export type CameraLifecycleTestHandle = { retryCamera: () => void }
+export type AppLifecycleTestHandle = {
+  restart: () => void
+  seedStripBuild: (photos: string[], selected: number[]) => void
+  developStrip: (options: CustomizeOpts) => Promise<void>
+  seedReveal: (stripUrl: string) => void
+  download: () => Promise<void>
+  getDownloadStatus: () => "idle"|"working"|"done"|"error"
+}
+type AppProps = {
+  cameraLifecycleTestHandle?: MutableRefObject<CameraLifecycleTestHandle | null>
+  appLifecycleTestHandle?: (handle: AppLifecycleTestHandle | null) => void
+}
 type LandmarkMotionFilterState = {
   timestamp:number
   raw:NormalizedLandmark[]
@@ -144,6 +162,10 @@ interface CustomizeOpts {
   offsets:Record<number,{x:number;y:number}>
 }
 
+function isCameraLifecycleScreen(screen: Screen) {
+  return screen === "ready" || screen === "booth"
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,6 +178,12 @@ const THEMES: {
   { id:"washer",   name:"Washer POV",    emoji:"◌",   tagline:"Soft blue laundry-day dream", previewBg:"radial-gradient(circle,transparent 40%,rgba(214,238,247,.72) 68%),url('/theme-assets/laundromat-neutral-blue-v3.png') center/cover", dark:false, accent:"#84B9CF" },
   { id:"elevator", name:"Elevator CCTV", emoji:"REC", tagline:"Cute corner-camera set", previewBg:"linear-gradient(rgba(255,245,249,.04),rgba(255,245,249,.04)),url('/theme-assets/elevator-cctv-cute.jpg') center/cover", dark:false, accent:"#E99ABC" },
 ]
+
+const SCENE_PREVIEWS: Record<ThemeId, string> = {
+  classic: "/couple.png",
+  washer: "/theme-assets/laundromat-neutral-blue-v3.png",
+  elevator: "/theme-assets/elevator-cctv-cute.jpg",
+}
 
 const PROPS:{id:PropId;name:string;emoji:string;tagline:string}[]=[
   {id:"none",name:"No filter",emoji:"○",tagline:"Keep it natural"},
@@ -573,7 +601,7 @@ function renderLandmarkSupport(
   pose:NormalizedLandmark[],
   hands:NormalizedLandmark[][]
 ) {
-  const ctx=supportCanvas.getContext("2d")!
+  const ctx=supportCanvas.getContext("2d", { willReadFrequently: true })!
   const point=(landmark:NormalizedLandmark)=>({x:landmark.x*supportCanvas.width,y:landmark.y*supportCanvas.height})
   ctx.clearRect(0,0,supportCanvas.width,supportCanvas.height)
   ctx.save()
@@ -1113,7 +1141,7 @@ function SampleStrip({
 // LANDING SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function LandingScreen({ onStart }:{ onStart:(roomCode?:string)=>void }) {
+export function LandingScreen({ onStart }:{ onStart:(roomCode?:string)=>void }) {
   const [joinCode, setJoinCode] = useState("")
 
   const s1=["linear-gradient(135deg,#fce4ec,#e1bee7)","linear-gradient(135deg,#e8f5e9,#b2ebf2)","linear-gradient(135deg,#fff9c4,#ffccbc)","linear-gradient(135deg,#f3e5f5,#fce4ec)"]
@@ -1121,95 +1149,38 @@ function LandingScreen({ onStart }:{ onStart:(roomCode?:string)=>void }) {
   const s3=["linear-gradient(135deg,#fce4ec,#fff9c4)","linear-gradient(135deg,#e3f2fd,#e1bee7)","linear-gradient(135deg,#f3e5f5,#fce4ec)","linear-gradient(135deg,#fff8e1,#e8f5e9)","linear-gradient(135deg,#e3f2fd,#bbdefb)","linear-gradient(135deg,#fce4ec,#f3e5f5)"]
 
   return (
-    <div style={{ position:"relative", minHeight:"100vh", overflow:"hidden", display:"flex", background:"#F7F1E7", fontFamily:"'Nunito',sans-serif" }}>
-      <div className="grain-overlay" />
-
-      {/* Floating strips — desktop */}
-      <div style={{ position:"absolute", inset:0, pointerEvents:"none" }} className="md-strips">
-        <div style={{ position:"absolute", left:"4%", top:"14%", "--rot":"-9deg" } as React.CSSProperties & Record<string,string>}>
-          <SampleStrip gradients={s1} label="이지연 & 민준" date="2024.12.24" style={{ transform:"rotate(-9deg)", animation:"float 6s ease-in-out infinite" }} />
-        </div>
-        <div style={{ position:"absolute", left:"14%", top:"54%", "--rot":"5deg" } as React.CSSProperties & Record<string,string>}>
-          <SampleStrip gradients={s2} label="Yuna & Kai" date="2025.01.14" style={{ transform:"rotate(5deg)", animation:"float 7.5s ease-in-out -2s infinite" }} />
-        </div>
-        <div style={{ position:"absolute", left:"2%", top:"74%", "--rot":"-4deg" } as React.CSSProperties & Record<string,string>}>
-          <SampleStrip gradients={s3} label="Sora & Ren" date="2025.02.14" wide style={{ transform:"rotate(-4deg)", animation:"float 8s ease-in-out -4s infinite" }} />
-        </div>
+    <main className="landing screen-enter">
+      <div className="landing__prints" aria-hidden="true">
+        <SampleStrip gradients={s1} label="Mina & Jules" date="09.01.26" style={{ transform:"rotate(-7deg)" }} />
+        <SampleStrip gradients={s2} label="Yuna & Kai" date="09.01.26" style={{ transform:"rotate(5deg)" }} />
+        <SampleStrip gradients={s3} label="Sora & Ren" date="09.01.26" wide style={{ transform:"rotate(-3deg)" }} />
       </div>
-
-      {/* Petal accents */}
-      <div style={{ position:"absolute", top:32, right:48, fontSize:76, opacity:.13, pointerEvents:"none", animation:"float 5s ease-in-out infinite" }}>🌸</div>
-      <div style={{ position:"absolute", bottom:80, right:24, fontSize:60, opacity:.09, pointerEvents:"none", animation:"float 7s ease-in-out -3s infinite" }}>✨</div>
-      <div style={{ position:"absolute", top:"45%", right:"38%", fontSize:40, opacity:.07, pointerEvents:"none", animation:"float 9s ease-in-out -5s infinite" }}>💕</div>
-
-      {/* Content */}
-      <div style={{ position:"relative", zIndex:10, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", minHeight:"100vh", width:"100%", padding:"40px 24px" }}>
-
-        {/* Left strips (always-visible layout aid, faded on mobile) */}
-        <div style={{ display:"flex", gap:32, alignItems:"center", justifyContent:"center", width:"100%", maxWidth:980, flexWrap:"wrap" }}>
-
-          {/* Strip showcase — hidden on small mobile, shown md+ */}
-          <div style={{ display:"flex", gap:16, alignItems:"flex-end", opacity:.95 }}>
-            <SampleStrip gradients={s1} label="이지연 & 민준" date="2024.12.24" style={{ transform:"rotate(-7deg)", animation:"float 6s ease-in-out infinite", marginBottom:16 }} />
-            <SampleStrip gradients={s2} label="Yuna & Kai" date="2025.01.14" style={{ transform:"rotate(4deg)", animation:"float 7.5s ease-in-out -2s infinite" }} />
-            <SampleStrip gradients={s3} label="Sora & Ren" date="2025.02.14" wide style={{ transform:"rotate(-3deg)", animation:"float 8.5s ease-in-out -4.5s infinite", marginBottom:8 }} />
-          </div>
-
-          {/* Main copy & CTA */}
-          <div style={{ maxWidth:400, display:"flex", flexDirection:"column", alignItems:"flex-start", gap:0 }}>
-
-            {/* Logo */}
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:24 }}>
-              <div style={{ width:40, height:40, borderRadius:"50%", background:"#EE6D8D", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:19, boxShadow:"0 4px 18px rgba(238,109,141,0.28)" }}>♡</div>
-              <span style={{ fontFamily:"'Nunito',sans-serif", fontWeight:800, fontSize:21, color:"#2D1B2E", letterSpacing:"-0.03em" }}>duet</span>
+      <section className="landing__content" aria-labelledby="landing-title">
+        <BrandMark />
+        <p className="landing__eyebrow">A private photo booth for two</p>
+        <h1 id="landing-title">Step into the booth, <em>together.</em></h1>
+        <p className="landing__intro">A little photo booth on the internet for you and your favorite person, wherever you both are.</p>
+        <div className="landing__actions">
+          <StudioButton block onClick={()=>onStart()}>Start a booth</StudioButton>
+          <div className="landing__join">
+            <label htmlFor="room-code">Room code</label>
+            <div className="landing__join-row">
+              <input
+                id="room-code"
+                type="text"
+                placeholder="ABC123"
+                value={joinCode}
+                onChange={e=>setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""))}
+                maxLength={6}
+                autoComplete="off"
+              />
+              <StudioButton tone="secondary" onClick={()=>joinCode.length===6&&onStart(joinCode)} disabled={joinCode.length!==6}>Join room</StudioButton>
             </div>
-
-            <h1 style={{ fontFamily:"'DM Serif Display',serif", fontSize:"clamp(2.1rem,5vw,3.4rem)", lineHeight:1.1, color:"#2D1B2E", marginBottom:16, margin:"0 0 16px 0" }}>
-              Step into the<br />booth,{" "}
-              <em style={{ color:"#C85B82", fontStyle:"italic" }}>together.</em>
-            </h1>
-
-            <p style={{ fontSize:15.5, color:"#9B7B90", lineHeight:1.72, marginBottom:32, margin:"0 0 32px 0" }}>
-              A little photo booth on the internet for you and your favorite person—wherever you both are.
-            </p>
-
-            {/* CTAs */}
-            <div style={{ display:"flex", flexDirection:"column", gap:12, width:"100%" }}>
-              <button
-                onClick={()=>onStart()}
-                style={{ padding:"15px 24px", borderRadius:50, background:"#2449D8", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 8px 26px rgba(36,73,216,0.26)", transition:"all 0.2s", letterSpacing:"0.02em" }}
-                onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 12px 34px rgba(36,73,216,0.34)"}}
-                onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="0 8px 26px rgba(36,73,216,0.26)"}}
-              >
-                Start a booth  →
-              </button>
-
-              <div style={{ display:"flex", gap:8 }}>
-                <input
-                  type="text" placeholder="Enter room code"
-                  value={joinCode}
-                  onChange={e=>setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""))}
-                  maxLength={6}
-                  style={{ flex:1, padding:"13px 16px", borderRadius:13, border:"1.5px solid rgba(200,91,130,0.25)", background:"rgba(255,255,255,0.82)", fontFamily:"'Nunito',sans-serif", fontSize:15, textAlign:"center", letterSpacing:"0.24em", color:"#2D1B2E", outline:"none", backdropFilter:"blur(8px)" }}
-                />
-                <button
-                  onClick={()=>joinCode.length===6&&onStart(joinCode)}
-                  disabled={joinCode.length!==6}
-                  style={{ padding:"13px 20px", borderRadius:13, border:"1.5px solid rgba(200,91,130,0.35)", background:"rgba(255,255,255,0.82)", color:"#C85B82", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:14, cursor:"pointer", backdropFilter:"blur(8px)", whiteSpace:"nowrap", transition:"all 0.2s" }}
-                >
-                  Join
-                </button>
-              </div>
-            </div>
-
-            <p style={{ marginTop:22, fontSize:12, color:"#ccc", display:"flex", alignItems:"center", gap:6 }}>
-              <span>🔒</span>
-              <span>Your photos belong to you. We never permanently store them.</span>
-            </p>
           </div>
         </div>
-      </div>
-    </div>
+        <p className="landing__privacy"><ShieldCheck aria-hidden="true" />Camera and photos stay between your browsers. Nothing is uploaded.</p>
+      </section>
+    </main>
   )
 }
 
@@ -1217,46 +1188,30 @@ function LandingScreen({ onStart }:{ onStart:(roomCode?:string)=>void }) {
 // ROOM SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RoomScreen({ code, partnerJoined, copied, onCopy, onContinue }:{
+export function RoomScreen({ code, partnerJoined, copied, onCopy, onContinue }:{
   code:string; partnerJoined:boolean; copied:boolean; onCopy:()=>void; onContinue:()=>void
 }) {
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 24px", background:"linear-gradient(160deg,#FDF2F8,#FDF7F2)", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden" }}>
-      <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:460, textAlign:"center" }}>
-        <div style={{ fontSize:46, marginBottom:16, animation:"heartbeat 2s ease infinite" }}>🔗</div>
-        <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:32, color:"#2D1B2E", marginBottom:8 }}>Your Booth Room</h2>
-        <p style={{ color:"#9B7B90", marginBottom:36, fontSize:15 }}>Share this code with your partner to connect</p>
-
-        <div style={{ background:"#fff", borderRadius:22, padding:"32px 28px", boxShadow:"0 4px 36px rgba(200,91,130,0.10)", marginBottom:20 }}>
-          <p style={{ fontSize:10, letterSpacing:"0.22em", color:"#ccc", marginBottom:14, fontWeight:700 }}>ROOM CODE</p>
-          <div style={{ fontSize:50, fontWeight:800, letterSpacing:"0.3em", color:"#2D1B2E", fontFamily:"'Nunito',sans-serif", marginBottom:22, lineHeight:1 }}>{code}</div>
-          <button
-            onClick={onCopy}
-            style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"10px 22px", borderRadius:12, border:"1.5px solid rgba(200,91,130,0.28)", background:copied?"#F5E6F0":"transparent", color:"#C85B82", fontFamily:"'Nunito',sans-serif", fontSize:14, fontWeight:600, cursor:"pointer", transition:"all 0.2s" }}
-          >
-            {copied?<><Check size={14}/>Copied!</>:<><Copy size={14}/>Copy invite link</>}
-          </button>
+    <main className="room screen-enter">
+      <section className="room__content" aria-labelledby="room-title">
+        <BrandMark compact />
+        <p className="room__eyebrow">Private room</p>
+        <h1 id="room-title">Your booth room</h1>
+        <p className="room__intro">Share this code with your partner to connect your two browsers.</p>
+        <div className="room__code-card">
+          <p>Room code</p>
+          <strong>{code}</strong>
+          <StudioButton tone="secondary" onClick={onCopy}>
+            {copied?<><Check aria-hidden="true" />Copied invite</>:<><Copy aria-hidden="true" />Copy invite link</>}
+          </StudioButton>
         </div>
-
-        {/* Partner status */}
-        <div style={{ display:"flex", alignItems:"center", gap:12, background:partnerJoined?"rgba(200,91,130,0.07)":"rgba(0,0,0,0.04)", borderRadius:14, padding:"14px 22px", marginBottom:28, border:`1.5px solid ${partnerJoined?"rgba(200,91,130,0.22)":"rgba(0,0,0,0.07)"}`, transition:"all 0.5s" }}>
-          <div style={{ width:10, height:10, borderRadius:"50%", background:partnerJoined?"#C85B82":"#ddd", boxShadow:partnerJoined?"0 0 0 3px rgba(200,91,130,0.22)":"none", transition:"all 0.4s", flexShrink:0 }} />
-          <span style={{ fontSize:14, color:partnerJoined?"#C85B82":"#9B7B90", fontWeight:600 }}>
-            {partnerJoined?"✓ Partner connected — ready to go!":"Waiting for your partner to join…"}
-          </span>
-          {!partnerJoined&&<div style={{ marginLeft:"auto", display:"flex", gap:4 }}>{[0,1,2].map(i=><div key={i} style={{ width:6, height:6, borderRadius:"50%", background:"#C85B82", animation:`blink 1.2s ease ${i*.22}s infinite` }}/>)}</div>}
-        </div>
-
-        <button
-          onClick={onContinue}
-          disabled={!partnerJoined}
-          style={{ width:"100%", padding:"15px", borderRadius:16, background:partnerJoined?"linear-gradient(135deg,#C85B82,#BFA3D4)":"#e8e8e8", color:partnerJoined?"#fff":"#bbb", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:partnerJoined?"pointer":"not-allowed", boxShadow:partnerJoined?"0 6px 24px rgba(200,91,130,0.35)":"none", transition:"all 0.3s" }}
-        >
-          Continue →
-        </button>
-      </div>
-    </div>
+        <StatusPanel tone={partnerJoined ? 'success' : 'info'} title={partnerJoined ? 'Partner connected' : 'Waiting for your partner'}>
+          {partnerJoined ? 'You can choose the booth together.' : 'Keep this tab open while they join.'}
+        </StatusPanel>
+        <p className="room__privacy"><ShieldCheck aria-hidden="true" />Your room is peer-to-peer. Camera and photo data stay between your browsers.</p>
+        <StudioButton block onClick={onContinue} disabled={!partnerJoined}>Continue</StudioButton>
+      </section>
+    </main>
   )
 }
 
@@ -1264,48 +1219,41 @@ function RoomScreen({ code, partnerJoined, copied, onCopy, onContinue }:{
 // LAYOUT SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function LayoutScreen({ selected, onSelect, onContinue }:{
+export function LayoutScreen({ selected, onSelect, onContinue }:{
   selected:Layout; onSelect:(l:Layout)=>void; onContinue:()=>void
 }) {
-  const opts:[Layout,string,string,React.ReactNode][] = [
-    ["classic","Classic Strip","4 vertical photos",
-      <div style={{ display:"flex", flexDirection:"column", gap:5, width:70 }}>
+  const opts:[Layout,string,string,string,React.ReactNode][] = [
+    ["classic","Classic Strip","4 vertical photos","Classic vertical keepsake",
+      <div className="layout-card__preview layout-card__preview--classic" aria-hidden="true">
         {[0,1,2,3].map(i=><div key={i} style={{ height:44, background:`hsl(${330+i*18},58%,${88+i*1.5}%)`, borderRadius:4 }}/>)}
       </div>
     ],
-    ["wide","Wide Frame","6 photos — 2 × 3 grid",
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4, width:96 }}>
+    ["wide","Wide Frame","6 photos","Wide six-photo story",
+      <div className="layout-card__preview layout-card__preview--wide" aria-hidden="true">
         {[0,1,2,3,4,5].map(i=><div key={i} style={{ height:38, background:`hsl(${268+i*16},48%,${88+i*1.5}%)`, borderRadius:4 }}/>)}
       </div>
     ],
   ]
 
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 20px", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="setup-screen setup-screen--layout screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:540, textAlign:"center" }}>
-        <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  1 / 3</p>
-        <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Choose your layout</h2>
-        <p style={{ color:"#9B7B90", marginBottom:36, fontSize:15 }}>Both layouts give you 10 attempts to capture the perfect shot.</p>
+      <section className="setup-screen__content" aria-label="Layout setup">
+        <SetupHeader step={1} title="Choose your layout" description="Both layouts give you 10 attempts to capture the perfect shot." />
 
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:32 }}>
-          {opts.map(([id,name,desc,preview])=>(
-            <button key={id} onClick={()=>onSelect(id)} style={{ background:"#fff", borderRadius:22, padding:"30px 20px", border:`2px solid ${selected===id?"#C85B82":"rgba(200,91,130,0.10)"}`, cursor:"pointer", transition:"all 0.24s", boxShadow:selected===id?"0 4px 26px rgba(200,91,130,0.22)":"0 2px 12px rgba(0,0,0,0.05)", transform:selected===id?"scale(1.03)":"scale(1)", display:"flex", flexDirection:"column", alignItems:"center", gap:18 }}>
+        <div className="layout-card-group">
+          {opts.map(([id,name,count,description,preview])=>(
+            <button key={id} className={`layout-card${selected===id ? " is-selected" : ""}`} aria-pressed={selected===id} onClick={()=>onSelect(id)}>
               {preview}
-              <div>
-                <div style={{ fontWeight:700, color:"#2D1B2E", fontSize:16, marginBottom:4 }}>{name}</div>
-                <div style={{ fontSize:13, color:"#9B7B90" }}>{desc}</div>
-              </div>
-              {selected===id&&<div style={{ width:24, height:24, borderRadius:"50%", background:"#C85B82", display:"flex", alignItems:"center", justifyContent:"center" }}><Check size={13} color="#fff" strokeWidth={3}/></div>}
+              <span className="layout-card__copy"><strong>{name}</strong><span>{count}</span><small>{description}</small></span>
+              {selected===id&&<span className="choice-check"><Check aria-hidden="true" /></span>}
             </button>
           ))}
         </div>
 
-        <button onClick={onContinue} style={{ width:"100%", padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}>
-          Next: Choose Scene →
-        </button>
-      </div>
-    </div>
+        <StudioButton block onClick={onContinue}>Next: Choose scene</StudioButton>
+      </section>
+    </main>
   )
 }
 
@@ -1313,47 +1261,42 @@ function LayoutScreen({ selected, onSelect, onContinue }:{
 // THEME SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:{
-  selected:ThemeId;selectedProp:PropId;onSelect:(t:ThemeId)=>void;onPropSelect:(p:PropId)=>void;onContinue:()=>void
+export function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue,onBack }:{
+  selected:ThemeId;selectedProp:PropId;onSelect:(t:ThemeId)=>void;onPropSelect:(p:PropId)=>void;onContinue:()=>void;onBack:()=>void
 }) {
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 20px", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="setup-screen setup-screen--theme screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:680, textAlign:"center" }}>
-        <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  2 / 3</p>
-        <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Choose your scene</h2>
-        <p style={{ color:"#9B7B90", marginBottom:32, fontSize:15 }}>Choose a shared background, then pick your own optional face filter. Your partner chooses theirs separately.</p>
+      <section className="setup-screen__content" aria-label="Scene setup">
+        <SetupHeader step={2} title="Choose your scene" description="Choose a shared background, then pick your own optional face filter. Your partner chooses theirs separately." onBack={onBack} />
 
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(156px,1fr))", gap:12, marginBottom:24 }}>
+        <div className="scene-card-group" aria-label="Shared scene choices">
           {THEMES.map(t=>(
-            <button key={t.id} onClick={()=>onSelect(t.id)} style={{ background:t.previewBg, borderRadius:18, padding:"24px 14px", border:`2.5px solid ${selected===t.id?t.accent:"transparent"}`, cursor:"pointer", transition:"all 0.24s", boxShadow:selected===t.id?`0 4px 22px ${t.accent}55`:"0 2px 10px rgba(0,0,0,0.08)", transform:selected===t.id?"scale(1.04)":"scale(1)", display:"flex", flexDirection:"column", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:26 }}>{t.emoji}</span>
-              <span style={{ fontWeight:700, color:t.dark?"#fff":"#2D1B2E", fontSize:14 }}>{t.name}</span>
-              <span style={{ fontSize:11, color:t.dark?"rgba(255,255,255,0.62)":"#9B7B90", lineHeight:1.5 }}>{t.tagline}</span>
-              {selected===t.id&&<div style={{ width:22, height:22, borderRadius:"50%", background:t.accent, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 0 0 3px rgba(255,255,255,0.28)` }}><Check size={11} color="#fff" strokeWidth={3}/></div>}
+            <button key={t.id} className={`scene-card${selected===t.id ? " is-selected" : ""}`} aria-pressed={selected===t.id} onClick={()=>onSelect(t.id)}>
+              <img src={SCENE_PREVIEWS[t.id]} alt={`${t.name} preview`} />
+              <span className="scene-card__copy"><span className="choice-badge">Shared choice</span><strong>{t.name}</strong><small>{t.tagline}</small></span>
+              {selected===t.id&&<span className="choice-check"><Check aria-hidden="true" /></span>}
             </button>
           ))}
         </div>
 
-        <div style={{ background:"linear-gradient(145deg,rgba(255,255,255,.94),rgba(255,240,247,.82))",border:"1px solid rgba(200,91,130,.2)",borderRadius:18,padding:"18px",marginBottom:28,boxShadow:"0 12px 32px rgba(115,71,98,.1)" }}>
-          <p style={{ fontSize:11,letterSpacing:".14em",color:"#C85B82",fontWeight:900,marginBottom:12 }}>YOUR STARTING FILTER · OPTIONAL</p>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(118px,1fr))",gap:9 }}>
+        <section className="filter-panel" aria-labelledby="filter-title">
+          <div className="filter-panel__heading"><div><p id="filter-title">Your starting filter</p><span>Optional and visible only on your face.</span></div></div>
+          <div className="filter-card-group" aria-label="Personal filter choices">
             {PROPS.map(prop=>(
-              <button key={prop.id} onClick={()=>onPropSelect(prop.id)} style={{ borderRadius:13,padding:"12px 6px",border:`1.5px solid ${selectedProp===prop.id?"#C85B82":"#E7D9E2"}`,background:selectedProp===prop.id?"linear-gradient(145deg,#fff,#FFF1F7)":"rgba(255,255,255,.7)",boxShadow:selectedProp===prop.id?"0 7px 18px rgba(200,91,130,.18)":"0 3px 10px rgba(59,36,68,.06)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all .16s",transform:selectedProp===prop.id?"translateY(-2px)":"none" }}>
-                <span style={{ fontSize:23,lineHeight:1,color:selectedProp===prop.id?"#C85B82":"#6C536A",textShadow:selectedProp===prop.id?"0 2px 10px rgba(200,91,130,.28)":"none" }}>{prop.emoji}</span>
-                <span style={{ fontSize:10,fontWeight:900,color:"#2D1B2E",textTransform:"uppercase",letterSpacing:".04em" }}>{prop.name}</span>
-                <span style={{ fontSize:9,color:"#9B7B90",lineHeight:1.3 }}>{prop.tagline}</span>
+              <button key={prop.id} className={`filter-card${selectedProp===prop.id ? " is-selected" : ""}`} aria-pressed={selectedProp===prop.id} aria-label={prop.name} onClick={()=>onPropSelect(prop.id)}>
+                <span className="filter-card__sprite" aria-hidden="true">{prop.id==="none"?<X />:<FilterSprite look={{propId:prop.id,variant:0}}/>}</span>
+                <span className="choice-badge filter-card__badge">Only you</span>
+                <span className="filter-card__copy"><strong>{prop.name}</strong><small>{prop.tagline}</small></span>
+                {selectedProp===prop.id&&<span className="choice-check"><Check aria-hidden="true" /></span>}
               </button>
             ))}
           </div>
-          <p style={{ fontSize:10,color:"#8F7287",marginTop:12 }}>Your choice follows only your face. It stays fixed until you turn it off or cycle to another look in the booth.</p>
-        </div>
+        </section>
 
-        <button onClick={onContinue} style={{ width:"100%", padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}>
-          Next: Get Ready →
-        </button>
-      </div>
-    </div>
+        <StudioButton block onClick={onContinue}>Next: Get ready</StudioButton>
+      </section>
+    </main>
   )
 }
 
@@ -1361,19 +1304,27 @@ function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onContinue }:
 // GET READY SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmoothingChange,onContinue }:{
+export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,cameraStatus,onSkinSmoothingChange,onRetryCamera,onContinue,onBack }:{
   stream:MediaStream|null; remoteStream:MediaStream|null; tipIndex:number;
-  skinSmoothing:SkinSmoothing;onSkinSmoothingChange:(strength:SkinSmoothing)=>void;onContinue:()=>void
+  skinSmoothing:SkinSmoothing;cameraStatus:CameraStatus;onSkinSmoothingChange:(strength:SkinSmoothing)=>void;onRetryCamera:()=>void;onContinue:()=>void;onBack:()=>void
 }) {
   const vidRef = useRef<HTMLVideoElement>(null)
   const remoteRef = useRef<HTMLVideoElement>(null)
-  const [ready, setReady] = useState(false)
+  const [hasPlayed, setHasPlayed] = useState(false)
 
   useEffect(()=>{
+    let active=true
+    setHasPlayed(false)
     if(stream&&vidRef.current){
-      vidRef.current.srcObject=stream
-      vidRef.current.play().then(()=>setReady(true)).catch(()=>{})
+      const video=vidRef.current
+      video.srcObject=stream
+      void video.play().then(()=>{
+        if(active&&video.srcObject===stream) setHasPlayed(true)
+      }).catch(()=>{
+        if(active&&video.srcObject===stream) setHasPlayed(false)
+      })
     }
+    return ()=>{ active=false }
   },[stream])
 
   useEffect(()=>{
@@ -1383,70 +1334,78 @@ function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmo
     }
   },[remoteStream])
 
+  const isFailure=cameraStatus.phase==="denied"||cameraStatus.phase==="unavailable"||cameraStatus.phase==="failed"
+  const canContinue=cameraStatus.phase==="ready"&&hasPlayed
+
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 20px", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="setup-screen setup-screen--ready screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, width:"100%", maxWidth:580, textAlign:"center" }}>
-        <p style={{ fontSize:11, letterSpacing:"0.2em", color:"#C85B82", marginBottom:10, fontWeight:700 }}>STEP  3 / 3</p>
-        <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:34, color:"#2D1B2E", marginBottom:8 }}>Get comfortable</h2>
-        <p style={{ color:"#9B7B90", marginBottom:28, fontSize:15 }}>Check your lighting, framing, and smile — then you"re ready.</p>
+      <section className="setup-screen__content setup-screen__content--ready" aria-label="Ready setup">
+        <SetupHeader step={3} title="Get comfortable" description="Check your lighting, framing, and smile, then you are ready." onBack={onBack} />
 
         {/* Camera preview */}
-        <div style={{ position:"relative", borderRadius:22, overflow:"hidden", background:"#111", aspectRatio:"4/3", maxWidth:380, margin:"0 auto 24px", boxShadow:"0 10px 44px rgba(0,0,0,0.18)" }}>
-          <video ref={vidRef} autoPlay playsInline muted style={{ width:"100%", height:"100%", objectFit:"cover", transform:"scaleX(-1)", display:"block",filter:skinSmoothing===0?"none":skinSmoothing===1?"brightness(1.012) saturate(.995)":"brightness(1.022) saturate(.985)" }}/>
-          {remoteStream&&<video ref={remoteRef} autoPlay playsInline style={{ position:"absolute", right:12, bottom:12, width:"34%", aspectRatio:"4/3", objectFit:"cover", transform:"scaleX(-1)", borderRadius:14, border:"3px solid #fff", boxShadow:"0 8px 24px rgba(0,0,0,.25)" }}/>} 
-          {!ready&&(
-            <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14, color:"rgba(255,255,255,0.7)" }}>
+        <div className="ready-preview">
+          <video ref={vidRef} autoPlay playsInline muted className="ready-preview__local" style={{ filter:skinSmoothing===0?"none":skinSmoothing===1?"brightness(1.012) saturate(.995)":"brightness(1.022) saturate(.985)" }}/>
+          {remoteStream&&<video ref={remoteRef} autoPlay playsInline className="ready-preview__partner"/>}
+          {!hasPlayed&&!isFailure&&(
+            <div className="ready-preview__loading">
               <Camera size={30} strokeWidth={1.5}/>
-              <p style={{ fontSize:14 }}>Requesting camera…</p>
+              <p>{cameraStatus.phase==="requesting"?"Requesting camera…":"Starting your preview…"}</p>
+              {cameraStatus.phase==="requesting"&&<span>Your browser may ask for camera permission.</span>}
             </div>
           )}
-          {ready&&(
-            <div style={{ position:"absolute", top:12, left:12, display:"flex", alignItems:"center", gap:6, background:"rgba(0,0,0,0.48)", backdropFilter:"blur(8px)", borderRadius:20, padding:"5px 11px" }}>
-              <div style={{ width:7, height:7, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 0 2px rgba(74,222,128,0.28)" }}/>
-              <span style={{ fontSize:11, color:"#fff", fontWeight:600 }}>You</span>
+          {hasPlayed&&(
+            <div className="ready-preview__you">
+              <span aria-hidden="true" />
+              <span>You</span>
             </div>
           )}
-          {remoteStream&&<div style={{ position:"absolute", right:18, bottom:18, color:"#fff", background:"rgba(0,0,0,.48)", padding:"4px 9px", borderRadius:20, fontSize:10 }}>Partner · live</div>}
+          {remoteStream&&<div className="ready-preview__partner-label">Partner · live</div>}
           {/* Subtle grid overlay */}
-          {ready&&<div style={{ position:"absolute", inset:0, backgroundImage:"linear-gradient(rgba(255,255,255,0.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.06) 1px,transparent 1px)", backgroundSize:"25% 33.3%", pointerEvents:"none" }}/>}
+          {hasPlayed&&<div className="ready-preview__grid"/>}
         </div>
 
-        <div style={{ margin:"0 auto 18px",maxWidth:400,background:"rgba(255,255,255,.86)",borderRadius:16,padding:"15px 16px",border:"1px solid rgba(200,91,130,.14)",boxShadow:"0 3px 16px rgba(59,36,68,.05)",textAlign:"left" }}>
-          <div style={{ display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",marginBottom:10 }}>
-            <p style={{ margin:0,fontSize:11,fontWeight:900,letterSpacing:".12em",color:"#C85B82" }}>YOUR SKIN SOFTENING</p>
-            <span style={{ fontSize:9,color:"#A78B9E" }}>Your choice only</span>
+        {isFailure&&(
+          <div className="ready-camera-recovery">
+            <StatusPanel tone="error" title={cameraStatus.message} />
+            <StudioButton tone="secondary" block onClick={onRetryCamera}>Retry camera</StudioButton>
           </div>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8 }}>
-            {([[0,"Natural"],[1,"Soft retouch"],[2,"Glow retouch"]] as [SkinSmoothing,string][]).map(([value,label])=>(
-              <button key={value} onClick={()=>onSkinSmoothingChange(value)} style={{ border:`1.5px solid ${skinSmoothing===value?"#C85B82":"#E6D9E1"}`,borderRadius:10,padding:"9px 6px",background:skinSmoothing===value?"#FFF4F8":"#fff",color:skinSmoothing===value?"#A7466A":"#755F70",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:11,cursor:"pointer",boxShadow:skinSmoothing===value?"0 3px 10px rgba(200,91,130,.12)":"none" }}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <p style={{ margin:"9px 2px 0",fontSize:10,lineHeight:1.45,color:"#A08698" }}>Optional and face-only in the booth. Your partner controls their own setting.</p>
+        )}
+
+        <div className="ready-smoothing">
+          <SegmentedControl<SkinSmoothing>
+            label="Your skin smoothing"
+            value={skinSmoothing}
+            options={[
+              { value:0, label:"Natural" },
+              { value:1, label:"Soft" },
+              { value:2, label:"Extra soft" },
+            ]}
+            onChange={onSkinSmoothingChange}
+          />
+          <p>Optional and face-only in the booth. Your partner controls their own setting.</p>
         </div>
 
         {/* Tip card */}
         <div style={{ margin:"0 auto 24px", maxWidth:400, background:"#fff", borderRadius:16, padding:"16px 22px", border:"1px solid rgba(200,91,130,0.12)", boxShadow:"0 2px 14px rgba(0,0,0,0.04)", textAlign:"left" }}>
-          <p style={{ fontSize:11, color:"#C85B82", fontWeight:700, marginBottom:6, letterSpacing:"0.1em" }}>💡  TIP {tipIndex+1} / {TIPS.length}</p>
+          <p style={{ fontSize:11, color:"#C85B82", fontWeight:700, marginBottom:6, letterSpacing:"0.1em" }}>TIP {tipIndex+1} / {TIPS.length}</p>
           <p style={{ fontSize:14, color:"#2D1B2E", lineHeight:1.65 }}>{TIPS[tipIndex]}</p>
         </div>
 
-        <button
-          onClick={onContinue} disabled={!ready}
-          style={{ padding:"15px 56px", borderRadius:16, background:ready?"linear-gradient(135deg,#C85B82,#BFA3D4)":"#e8e8e8", color:ready?"#fff":"#bbb", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:ready?"pointer":"not-allowed", boxShadow:ready?"0 6px 24px rgba(200,91,130,0.35)":"none", transition:"all 0.3s" }}
-        >
-          {ready?"We're Ready! ✦":"Waiting for camera…"}
-        </button>
-      </div>
-    </div>
+        <StudioButton block onClick={onContinue} disabled={!canContinue}>
+          {canContinue?"We're ready":"Waiting for camera…"}
+        </StudioButton>
+      </section>
+    </main>
   )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BOOTH SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const getCaptureProgress = (count: number) => `${Math.max(0, Math.min(10, count))} of 10`
 
 function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinSmoothing,partnerSkinSmoothing,localParticipantScale,partnerParticipantScale,frontParticipant,localParticipant,layout,captureAt,onLocalPropChange,onLocalScaleChange,onFrontParticipantChange,onCaptureRequest,onPhotoCapture,onDone }:{
   stream:MediaStream|null;remoteStream:MediaStream|null;themeId:ThemeId;localProp:PropLook;partnerProp:PropLook;
@@ -1498,8 +1457,8 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
   const faceTimestampRef=useRef(0)
   const faceBusyRef=useRef(false)
   const facePartnerNextRef=useRef(false)
-  const rafRef      = useRef<number>()
-  const timerRef    = useRef<ReturnType<typeof setInterval>>()
+  const rafRef      = useRef<number|undefined>(undefined)
+  const timerRef    = useRef<ReturnType<typeof setInterval>|undefined>(undefined)
   const [photos, setPhotos]     = useState<string[]>([])
   const [countdown, setCountdown] = useState<number|null>(null)
   const [flashing, setFlashing]   = useState(false)
@@ -1772,30 +1731,34 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
   const sub  = isDark?"rgba(255,255,255,0.45)":"#9B7B90"
   const acc  = isDark?theme.accent:"#C85B82"
   const localScalePercent=Math.round(localParticipantScale*100)
+  const boothClassName = `booth studio-screen booth--${themeId}`
+  const consoleRowClassName = (name: 'proximity' | 'size' | 'priority') => `booth-console__row booth-console__row--${name}`
 
   return (
-    <div style={{ minHeight:"100vh", background:bg, display:"flex", flexDirection:"column", fontFamily:"'Nunito',sans-serif", position:"relative", overflowX:"hidden", overflowY:"auto" }}>
+    <main className={boothClassName} style={{ minHeight:"100vh", background:bg, display:"flex", flexDirection:"column", fontFamily:"'Nunito',sans-serif", position:"relative", overflowX:"hidden", overflowY:"auto" }}>
       <div className="grain-overlay" />
-      {flashing&&<div style={{ position:"fixed", inset:0, background:"#fff", zIndex:9999, animation:"flashOut 0.3s ease forwards", pointerEvents:"none" }}/>}
 
       <video ref={vidRef} autoPlay playsInline muted style={{ display:"none" }}/>
       <video ref={partnerRef} autoPlay playsInline style={{ display:"none" }}/>
       <canvas ref={captureRef} width={800} height={528} style={{ display:"none" }}/>
 
       {/* Header */}
-      <div style={{ position:"relative", zIndex:10, padding:"14px 24px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-        <span style={{ fontSize:12, color:acc, fontWeight:700, letterSpacing:"0.12em" }}>duet ♡</span>
-        <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-          {Array.from({length:MAX},(_,i)=>(
-            <div key={i} style={{ height:7, width:i<photos.length?18:7, borderRadius:4, background:i<photos.length?acc:isDark?"rgba(255,255,255,0.1)":"rgba(200,91,130,0.14)", transition:"all 0.35s" }}/>
-          ))}
+      <header className="booth__header" style={{ position:"relative", zIndex:10, padding:"14px 24px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <span style={{ fontSize:12, color:acc, fontWeight:700, letterSpacing:"0.12em" }}>duet</span>
+        <div className="booth-progress">
+          <span>{getCaptureProgress(photos.length)}</span>
+          <div className="booth-progress__segments" aria-hidden="true">
+            {Array.from({length:MAX},(_,i)=>(
+              <span key={i} className={i<photos.length?"is-complete":""} style={{ "--progress-accent":acc } as React.CSSProperties & { "--progress-accent": string }}/>
+            ))}
+          </div>
         </div>
-        <span style={{ fontSize:12, color:sub, fontWeight:600 }}>{photos.length}/{MAX}</span>
-      </div>
+      </header>
 
       {/* Canvas */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"safe center", padding:"0 14px 24px", gap:14, position:"relative", zIndex:10 }}>
-        <div style={{ position:"relative", borderRadius:22, overflow:"hidden", boxShadow:isDark?`0 0 0 2px ${theme.accent}44,0 18px 60px rgba(0,0,0,0.65)`:"0 10px 50px rgba(0,0,0,0.13)", maxWidth:760, width:"100%" }}>
+      <section className="booth__camera" aria-label="Live booth preview" style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"safe center", padding:"0 14px 24px", gap:14, position:"relative", zIndex:10 }}>
+        {flashing&&<div style={{ position:"fixed", inset:0, background:"#fff", zIndex:9999, animation:"flashOut 0.3s ease forwards", pointerEvents:"none" }}/>}
+        <div className="booth__camera-frame" style={{ position:"relative", borderRadius:22, overflow:"hidden", boxShadow:isDark?`0 0 0 2px ${theme.accent}44,0 18px 60px rgba(0,0,0,0.65)`:"0 10px 50px rgba(0,0,0,0.13)", maxWidth:760, width:"100%" }}>
           <canvas ref={previewRef} width={760} height={500} style={{ display:"block", width:"100%", aspectRatio:"760/500", borderRadius:22 }}/>
 
           {/* You / Partner labels */}
@@ -1823,54 +1786,59 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
             </div>
           )}
         </div>
+      </section>
 
+      <section className="booth-console" aria-label="Booth controls">
         {/* Proximity */}
-        <div style={{ display:"flex", alignItems:"center", gap:12, background:isDark?"rgba(255,255,255,0.06)":"rgba(255,255,255,0.85)", backdropFilter:"blur(12px)", borderRadius:50, padding:"10px 22px", border:`1px solid ${isDark?"rgba(255,255,255,0.09)":"rgba(200,91,130,0.14)"}` }}>
-          <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>← Further</span>
-          <input type="range" min={0} max={100} value={proximity} onChange={e=>setProximity(Number(e.target.value))} style={{ width:130, "--thumb-color":acc, accentColor:acc } as React.CSSProperties & Record<string,string>}/>
-          <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>Closer →</span>
+        <div className={consoleRowClassName('proximity')} style={{ display:"flex", alignItems:"center", gap:12, background:isDark?"rgba(255,255,255,0.06)":"rgba(255,255,255,0.85)", backdropFilter:"blur(12px)", borderRadius:50, padding:"10px 22px", border:`1px solid ${isDark?"rgba(255,255,255,0.09)":"rgba(200,91,130,0.14)"}` }}>
+          <label htmlFor="booth-proximity" style={{ fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",whiteSpace:"nowrap" }}>Togetherness</label>
+          <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>Further</span>
+          <input id="booth-proximity" type="range" min={0} max={100} value={proximity} onChange={e=>setProximity(Number(e.target.value))} style={{ width:130, "--thumb-color":acc, accentColor:acc } as CustomCssProperties}/>
+          <span style={{ fontSize:12, color:sub, whiteSpace:"nowrap", fontWeight:600 }}>Closer</span>
         </div>
 
-        <div style={{ display:"flex",alignItems:"center",gap:9,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 10px 7px 14px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.05)" }}>
+        <div className={consoleRowClassName('size')} style={{ display:"flex",alignItems:"center",gap:9,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 10px 7px 14px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.05)" }}>
           <span style={{ fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",whiteSpace:"nowrap" }}>YOUR SIZE</span>
           <span style={{ fontSize:11,color:sub,fontWeight:700,whiteSpace:"nowrap" }}>Smaller</span>
-          <button onClick={()=>onLocalScaleChange((localScalePercent-5)/100)} disabled={localScalePercent<=80} aria-label="Make yourself smaller" style={{ width:26,height:26,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:16,fontWeight:900,cursor:localScalePercent<=80?"default":"pointer",opacity:localScalePercent<=80?.38:1,display:"grid",placeItems:"center",padding:0 }}>−</button>
-          <input aria-label="Your size" type="range" min={80} max={120} step={1} value={localScalePercent} onChange={event=>onLocalScaleChange(Number(event.target.value)/100)} style={{ width:112,"--thumb-color":acc,accentColor:acc } as React.CSSProperties & Record<string,string>}/>
-          <button onClick={()=>onLocalScaleChange((localScalePercent+5)/100)} disabled={localScalePercent>=120} aria-label="Make yourself larger" style={{ width:26,height:26,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:15,fontWeight:900,cursor:localScalePercent>=120?"default":"pointer",opacity:localScalePercent>=120?.38:1,display:"grid",placeItems:"center",padding:0 }}>+</button>
+          <button onClick={()=>onLocalScaleChange((localScalePercent-5)/100)} disabled={localScalePercent<=80} aria-label="Make yourself smaller" style={{ width:44,height:44,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:16,fontWeight:900,cursor:localScalePercent<=80?"default":"pointer",opacity:localScalePercent<=80?.38:1,display:"grid",placeItems:"center",padding:0 }}>−</button>
+          <input aria-label="Your size" aria-valuetext={`${localScalePercent}%`} type="range" min={80} max={120} step={1} value={localScalePercent} onChange={event=>onLocalScaleChange(Number(event.target.value)/100)} style={{ width:112,"--thumb-color":acc,accentColor:acc } as CustomCssProperties}/>
+          <button onClick={()=>onLocalScaleChange((localScalePercent+5)/100)} disabled={localScalePercent>=120} aria-label="Make yourself larger" style={{ width:44,height:44,borderRadius:"50%",border:`1px solid ${isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:"transparent",color:fg,fontFamily:"'Nunito',sans-serif",fontSize:15,fontWeight:900,cursor:localScalePercent>=120?"default":"pointer",opacity:localScalePercent>=120?.38:1,display:"grid",placeItems:"center",padding:0 }}>+</button>
           <span style={{ fontSize:11,color:sub,fontWeight:700,whiteSpace:"nowrap" }}>Larger</span>
-          <button onClick={()=>onLocalScaleChange(1)} aria-label="Reset your size to normal" title="Reset to normal" style={{ minWidth:58,height:30,borderRadius:18,border:`1px solid ${localScalePercent===100?acc:isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:localScalePercent===100?acc:"transparent",color:localScalePercent===100?"#fff":fg,fontFamily:"'Nunito',sans-serif",fontSize:10,fontWeight:900,cursor:"pointer",padding:"0 9px" }}>
-            {localScalePercent===100?"NORMAL":`${localScalePercent}%`}
+          <button onClick={()=>onLocalScaleChange(1)} aria-label="Normal size" title="Normal size" style={{ minWidth:76,minHeight:44,borderRadius:18,border:`1px solid ${localScalePercent===100?acc:isDark?"rgba(255,255,255,.14)":"#D9E5EA"}`,background:localScalePercent===100?acc:"transparent",color:localScalePercent===100?"#fff":fg,fontFamily:"'Nunito',sans-serif",fontSize:10,fontWeight:900,cursor:"pointer",padding:"0 9px" }}>
+            {localScalePercent===100?"NORMAL SIZE":`${localScalePercent}%`}
           </button>
         </div>
 
-        <div style={{ width:"min(100%,620px)",display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"wrap",gap:7,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(200,91,130,.16)"}`,borderRadius:22,padding:"9px 10px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.06)" }}>
+        <div className="booth-console__filters" style={{ width:"min(100%,620px)",display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"wrap",gap:7,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.9)",border:`1px solid ${isDark?"rgba(255,255,255,.1)":"rgba(200,91,130,.16)"}`,borderRadius:22,padding:"9px 10px",backdropFilter:"blur(12px)",boxShadow:"0 5px 18px rgba(59,36,68,.06)" }}>
           <span style={{ width:"100%",textAlign:"center",fontSize:10,color:sub,fontWeight:900,letterSpacing:".08em",marginBottom:1 }}>YOUR FILTER · TAP A SPRITE</span>
-          <button onClick={()=>onLocalPropChange({propId:"none",variant:0})} aria-label="Remove filter" title="Remove filter" aria-pressed={localProp.propId==="none"} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${localProp.propId==="none"?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:localProp.propId==="none"?`${acc}18`:"transparent",color:localProp.propId==="none"?acc:sub,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:localProp.propId==="none"?`0 5px 14px ${acc}25`:"none" }}>
-            <X size={20} strokeWidth={2.7}/>
-          </button>
-          {PROP_LOOKS.map(look=>{
-            const selected=look.propId===localProp.propId&&look.variant===localProp.variant
-            return <button key={`${look.propId}-${look.variant}`} onClick={()=>onLocalPropChange({propId:look.propId,variant:look.variant})} aria-label={look.name} title={look.name} aria-pressed={selected} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${selected?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:selected?`${acc}18`:isDark?"rgba(255,255,255,.025)":"#fff",color:fg,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:selected?`0 5px 14px ${acc}28`:"none",transform:selected?"translateY(-2px)":"none",transition:"transform .16s ease,border-color .16s ease,box-shadow .16s ease" }}>
-              <FilterSprite look={look}/>
-              {selected&&(
-                <span style={{ position:"absolute",right:4,top:4,width:7,height:7,borderRadius:"50%",background:acc,boxShadow:"0 0 0 2px #fff" }}/>
-              )}
+          <div className="booth-console__filter-sprites">
+            <button onClick={()=>onLocalPropChange({propId:"none",variant:0})} aria-label="Remove filter" title="Remove filter" aria-pressed={localProp.propId==="none"} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${localProp.propId==="none"?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:localProp.propId==="none"?`${acc}18`:"transparent",color:localProp.propId==="none"?acc:sub,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:localProp.propId==="none"?`0 5px 14px ${acc}25`:"none" }}>
+              <X size={20} strokeWidth={2.7}/>
             </button>
-          })}
+            {PROP_LOOKS.map(look=>{
+              const selected=look.propId===localProp.propId&&look.variant===localProp.variant
+              return <button key={`${look.propId}-${look.variant}`} onClick={()=>onLocalPropChange({propId:look.propId,variant:look.variant})} aria-label={look.name} title={look.name} aria-pressed={selected} style={{ position:"relative",width:58,height:48,borderRadius:14,border:`2px solid ${selected?acc:isDark?"rgba(255,255,255,.12)":"#E7D9E2"}`,background:selected?`${acc}18`:isDark?"rgba(255,255,255,.025)":"#fff",color:fg,cursor:"pointer",display:"grid",placeItems:"center",padding:0,boxShadow:selected?`0 5px 14px ${acc}28`:"none",transform:selected?"translateY(-2px)":"none",transition:"transform .16s ease,border-color .16s ease,box-shadow .16s ease" }}>
+                <FilterSprite look={look}/>
+                {selected&&(
+                  <span style={{ position:"absolute",right:4,top:4,width:7,height:7,borderRadius:"50%",background:acc,boxShadow:"0 0 0 2px #fff" }}/>
+                )}
+              </button>
+            })}
+          </div>
         </div>
 
-        <div style={{ display:"flex",alignItems:"center",gap:8,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.86)",border:`1px solid ${isDark?"rgba(255,255,255,.09)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 9px 7px 14px",backdropFilter:"blur(12px)" }}>
-          <span style={{ fontSize:11,color:sub,fontWeight:800,letterSpacing:".06em",marginRight:2 }}>FRONT PERSON</span>
+        <fieldset className={consoleRowClassName('priority')} style={{ display:"flex",alignItems:"center",gap:8,background:isDark?"rgba(255,255,255,.06)":"rgba(255,255,255,.86)",border:`1px solid ${isDark?"rgba(255,255,255,.09)":"rgba(132,185,207,.24)"}`,borderRadius:50,padding:"7px 9px 7px 14px",backdropFilter:"blur(12px)" }}>
+          <legend style={{ fontSize:11,color:sub,fontWeight:800,letterSpacing:".06em",marginRight:2 }}>Front person</legend>
           {(["p1","p2"] as ParticipantId[]).map(participant=>{
             const isYou=participant===localParticipant
             return <button key={participant} onClick={()=>onFrontParticipantChange(participant)} aria-pressed={frontParticipant===participant} style={{ borderRadius:30,border:`1px solid ${frontParticipant===participant?acc:isDark?"rgba(255,255,255,.12)":"#D9E5EA"}`,padding:"7px 11px",background:frontParticipant===participant?acc:"transparent",color:frontParticipant===participant?"#fff":fg,fontFamily:"'Nunito',sans-serif",fontSize:11,fontWeight:900,cursor:"pointer",boxShadow:frontParticipant===participant?`0 4px 13px ${acc}45`:"none" }}>
               {participant.toUpperCase()} · {isYou?"You":"Partner"}
             </button>
           })}
-        </div>
+        </fieldset>
 
-        <div style={{ fontSize:11, color:segmentStatus==="error"?"#ef4444":sub, fontWeight:600 }}>
-          {segmentStatus==="error"?"Body tracking could not load — refresh to retry":masksReady?"Low-latency face mesh + body tracking ready ✓":"Preparing face and body tracking…"}
+        <div role="status" aria-live="polite" style={{ fontSize:11, color:segmentStatus==="error"?"#ef4444":sub, fontWeight:600 }}>
+          {segmentStatus==="error"?"Body tracking could not load. Refresh to retry.":masksReady?"Low-latency face mesh and body tracking ready.":"Preparing face and body tracking…"}
         </div>
 
         {/* Thumbnails */}
@@ -1883,14 +1851,11 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
             ))}
           </div>
         )}
-      </div>
+        <div className="booth__shutter" style={{ position:"relative", zIndex:10, padding:"16px 24px 36px", display:"flex", alignItems:"center", justifyContent:"center", gap:20 }}>
+          <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{!remoteStream?"Waiting for partner’s live camera":!masksReady?"Tracking bodies, arms, and hands":photos.length<MAX?"Ready for the next moment":"All ten captured"}</div>
 
-      {/* Controls */}
-      <div style={{ position:"relative", zIndex:10, padding:"16px 24px 36px", display:"flex", alignItems:"center", justifyContent:"center", gap:20 }}>
-        <div style={{ width:120, fontSize:11, color:sub, lineHeight:1.4, textAlign:"right" }}>{!remoteStream?"Waiting for partner’s live camera":!masksReady?"Tracking bodies, arms, and hands":photos.length<MAX?`${MAX-photos.length} moment${MAX-photos.length===1?"":"s"} left`:"All ten captured"}</div>
-
-        {/* Shutter */}
-        <button
+          {/* Shutter */}
+          <button
           onClick={canShoot?onCaptureRequest:undefined}
           disabled={!canShoot}
           aria-label="Capture photo"
@@ -1901,13 +1866,14 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
           <div style={{ width:28, height:28, borderRadius:"50%", background:"rgba(255,255,255,0.92)" }}/>
         </button>
 
-        {photos.length>=MAX&&(
-          <button onClick={onDone} style={{ padding:"12px 24px", borderRadius:50, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:14, border:"none", cursor:"pointer", boxShadow:"0 4px 18px rgba(200,91,130,0.4)" }}>
-            Done →
-          </button>
-        )}
-      </div>
-    </div>
+          {photos.length>=MAX&&(
+            <button onClick={onDone} style={{ minHeight:44, padding:"12px 24px", borderRadius:50, background:acc, color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:14, border:"none", cursor:"pointer", boxShadow:"0 4px 18px rgba(200,91,130,0.4)" }}>
+              Done
+            </button>
+          )}
+        </div>
+      </section>
+    </main>
   )
 }
 
@@ -1915,43 +1881,51 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
 // SELECT SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function SelectScreen({ photos, selected, layout, onToggle, onContinue }:{
+export function SelectScreen({ photos, selected, layout, onToggle, onContinue }:{
   photos:string[]; selected:number[]; layout:Layout; onToggle:(i:number)=>void; onContinue:()=>void
 }) {
   const needed=layout==="classic"?4:6
   const done=selected.length===needed
+  const selectionOrder = ["first", "second", "third", "fourth", "fifth", "sixth"]
 
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="selection-screen screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, maxWidth:680, margin:"0 auto", padding:"40px 18px" }}>
-        <div style={{ textAlign:"center", marginBottom:32 }}>
-          <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:32, color:"#2D1B2E", marginBottom:8 }}>Pick your favourites</h2>
-          <p style={{ color:"#9B7B90", fontSize:15 }}>
-            Choose <strong style={{ color:"#C85B82" }}>{needed} photos</strong> for your {layout==="classic"?"classic strip":"wide frame"}.{" "}
-            <span style={{ color:done?"#C85B82":"#ccc", fontWeight:600 }}>{selected.length}/{needed} selected</span>
+      <div className="selection-screen__content">
+        <header className="selection-screen__header">
+          <p className="selection-screen__eyebrow">Contact sheet</p>
+          <h1>Pick your favourites</h1>
+          <p>
+            Choose <strong>{needed} photos</strong> for your {layout==="classic"?"classic strip":"wide frame"}.
           </p>
-        </div>
+        </header>
 
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(176px,1fr))", gap:12, marginBottom:32 }}>
+        <div className="selection-grid">
           {photos.map((p,i)=>{
             const isSel=selected.includes(i)
             const rank=selected.indexOf(i)
+            const stateLabel=isSel?`selected ${selectionOrder[rank]}`:"not selected"
             return (
-              <button key={i} onClick={()=>onToggle(i)} style={{ position:"relative", borderRadius:14, overflow:"hidden", aspectRatio:"4/3", border:`3px solid ${isSel?"#C85B82":"transparent"}`, cursor:"pointer", background:"#000", padding:0, transform:isSel?"scale(1.03)":"scale(1)", boxShadow:isSel?"0 6px 26px rgba(200,91,130,0.38)":"0 2px 10px rgba(0,0,0,0.07)", transition:"all 0.2s" }}>
-                <img src={p} alt={`Photo ${i+1}`} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", opacity:isSel?1:selected.length>=needed?0.42:0.78, transition:"opacity 0.2s" }}/>
-                {isSel&&<div style={{ position:"absolute", top:8, right:8, width:26, height:26, borderRadius:"50%", background:"#C85B82", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.2)" }}><span style={{ fontSize:12, color:"#fff", fontWeight:800 }}>{rank+1}</span></div>}
-                <div style={{ position:"absolute", bottom:6, left:8, fontSize:11, color:"rgba(255,255,255,0.68)", fontWeight:600 }}>#{i+1}</div>
+              <button key={i} type="button" className={`selection-card${isSel?" is-selected":""}`} aria-label={`Photo ${i+1}, ${stateLabel}`} aria-pressed={isSel} onClick={()=>onToggle(i)}>
+                <img src={p} alt="" />
+                {isSel&&<span className="selection-card__selected"><Check aria-hidden="true" /><span>{rank+1}</span></span>}
+                <span className="selection-card__number" aria-hidden="true">Photo {i+1}</span>
               </button>
             )
           })}
         </div>
 
-        <button onClick={onContinue} disabled={!done} style={{ width:"100%", padding:"15px", borderRadius:16, background:done?"linear-gradient(135deg,#C85B82,#BFA3D4)":"#e8e8e8", color:done?"#fff":"#bbb", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:done?"pointer":"not-allowed", boxShadow:done?"0 6px 24px rgba(200,91,130,0.35)":"none", transition:"all 0.3s" }}>
-          {done?"Customize Your Strip →":`Select ${needed-selected.length} more photo${needed-selected.length!==1?"s":""}`}
-        </button>
+        <section className="selection-action" aria-label="Photo selection progress">
+          <div>
+            <p className="selection-action__count">{selected.length} of {needed} selected</p>
+            <p>Tap a selected photo to remove it.</p>
+          </div>
+          <StudioButton block onClick={onContinue} disabled={!done}>
+            Customize your strip
+          </StudioButton>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
 
@@ -1959,7 +1933,7 @@ function SelectScreen({ photos, selected, layout, onToggle, onContinue }:{
 // CUSTOMIZE SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
+export function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
   photos:string[]; selectedIndices:number[]; layout:Layout; onDone:(opts:CustomizeOpts)=>void
 }) {
   const [frameColor, setFrameColor] = useState("#ffffff")
@@ -1984,41 +1958,44 @@ function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
   const addSticker=(emoji:string)=>setStickers(prev=>[...prev,{ id:uid(), emoji, x:25+Math.random()*50, y:15+Math.random()*65, rot:(Math.random()-.5)*28 }])
 
   const tabs=[
-    {id:"frame" as const,  label:"Frame",   icon:"🖼️"},
-    {id:"filter" as const, label:"Filter",  icon:"✨"},
-    {id:"stickers" as const,label:"Stickers",icon:"🌸"},
-    {id:"text" as const,   label:"Names",   icon:"✍️"},
+    {id:"frame" as const,  label:"Frame",   icon:Frame},
+    {id:"filter" as const, label:"Filter",  icon:ImageIcon},
+    {id:"stickers" as const,label:"Stickers",icon:Sticker},
+    {id:"text" as const,   label:"Names",   icon:Type},
   ]
+  const removeSticker=(id:string)=>setStickers(previous=>previous.filter(sticker=>sticker.id!==id))
 
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="customize-screen screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, maxWidth:900, margin:"0 auto", padding:"32px 18px", display:"flex", flexWrap:"wrap", gap:28, alignItems:"flex-start", justifyContent:"center" }}>
+      <div className="customize-workspace">
 
         {/* Strip preview */}
-        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:12 }}>
-          <p style={{ fontSize:11, letterSpacing:"0.16em", color:"#9B7B90", fontWeight:700 }}>PREVIEW</p>
+        <section className="customize-preview" aria-label="Strip preview">
+          <p className="customize-preview__eyebrow">Preview</p>
 
           <div
-            style={{ width:stripW, background:frameColor, borderRadius:10, boxShadow:"0 14px 52px rgba(0,0,0,0.17)", overflow:"hidden", position:"relative", userSelect:"none" }}
+            className="strip-preview"
+            style={{ width:stripW, background:frameColor }}
             onMouseMove={e=>{ if(!drag) return; const dx=e.clientX-drag.sx,dy=e.clientY-drag.sy; setOffsets(o=>({...o,[drag.idx]:{x:drag.ox+dx,y:drag.oy+dy}})) }}
             onMouseUp={()=>setDrag(null)}
             onMouseLeave={()=>setDrag(null)}
           >
             {/* Header */}
-            <div style={{ height:28, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <span style={{ fontSize:8, letterSpacing:"0.24em", color:isDark?"rgba(255,255,255,0.45)":"#C85B82", fontWeight:700 }}>duet ♡</span>
+            <div className="strip-preview__header">
+              <span className={isDark ? "is-dark" : ""}>duet ♡</span>
             </div>
 
             {/* Photos */}
-            <div style={{ display:"grid", gridTemplateColumns:`repeat(${cols},1fr)`, gap:4, padding:"0 7px" }}>
+            <div className="strip-preview__photos" style={{ gridTemplateColumns:`repeat(${cols},1fr)` }}>
               {selectedPhotos.map((p,i)=>(
                 <div key={i}
-                  style={{ position:"relative", height:photoH, borderRadius:4, overflow:"hidden", cursor:"grab", background:"#eee" }}
+                  className="strip-preview__photo"
+                  style={{ height:photoH }}
                   onMouseDown={e=>{ e.preventDefault(); setDrag({idx:i,sx:e.clientX,sy:e.clientY,ox:offsets[i]?.x||0,oy:offsets[i]?.y||0}) }}
                 >
                   <img src={p} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", filter:filterCSS!=="none"?filterCSS:undefined, transform:`translate(${offsets[i]?.x||0}px,${offsets[i]?.y||0}px) scale(1.12)`, transformOrigin:"center", pointerEvents:"none", transition:drag?.idx===i?"none":"transform 0s" }}/>
-                  <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", background:"rgba(0,0,0,0.2)", opacity:drag?.idx===i?1:0, transition:"opacity 0.15s", pointerEvents:"none" }}>
+                  <div className={`strip-preview__drag${drag?.idx===i ? " is-dragging" : ""}`}>
                     <Move size={13} color="rgba(255,255,255,0.85)"/>
                   </div>
                 </div>
@@ -2027,56 +2004,62 @@ function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
 
             {/* Stickers */}
             {stickers.map(s=>(
-              <div key={s.id} onClick={()=>setStickers(p=>p.filter(x=>x.id!==s.id))} style={{ position:"absolute", left:`${s.x}%`, top:`${s.y}%`, fontSize:17, transform:`rotate(${s.rot}deg)`, cursor:"pointer", userSelect:"none", zIndex:5, lineHeight:1 }} title="Click to remove">
+              <div key={s.id} className="strip-preview__sticker" role="button" tabIndex={0} aria-label={`Remove ${s.emoji} sticker`} onClick={()=>removeSticker(s.id)} onKeyDown={event=>{
+                if(event.key==="Enter"||event.key===" "){ event.preventDefault(); removeSticker(s.id) }
+              }} style={{ left:`${s.x}%`, top:`${s.y}%`, transform:`rotate(${s.rot}deg)` }}>
                 {s.emoji}
               </div>
             ))}
 
             {/* Footer */}
-            <div style={{ height:34, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, marginTop:5 }}>
-              <span style={{ fontSize:11, color:isDark?"rgba(255,255,255,0.65)":"#9B7B90", fontFamily:"'Dancing Script',cursive" }}>
+            <div className={`strip-preview__footer${isDark ? " is-dark" : ""}`}>
+              <span>
                 {name1&&name2?`${name1}  ♡  ${name2}`:name1||name2||"Together ♡"}
               </span>
-              <span style={{ fontSize:8, color:isDark?"rgba(255,255,255,0.35)":"#ccc" }}>{date}</span>
+              <span>{date}</span>
             </div>
           </div>
 
-          <p style={{ fontSize:11, color:"#ccc", textAlign:"center" }}>Drag photos to reposition · Click stickers to remove</p>
-        </div>
+          <p className="customize-preview__hint">Drag photos to reposition. Select a sticker to remove it.</p>
+        </section>
 
         {/* Controls */}
-        <div style={{ flex:1, minWidth:260, maxWidth:380 }}>
+        <section className="customize-tools" aria-label="Customize your strip">
           {/* Tabs */}
-          <div style={{ display:"flex", gap:5, background:"rgba(200,91,130,0.07)", borderRadius:16, padding:5, marginBottom:22 }}>
-            {tabs.map(t=>(
-              <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1, padding:"8px 4px", borderRadius:12, border:"none", background:tab===t.id?"#fff":"transparent", boxShadow:tab===t.id?"0 2px 8px rgba(0,0,0,0.07)":"none", cursor:"pointer", fontSize:10, fontWeight:700, color:tab===t.id?"#C85B82":"#9B7B90", transition:"all 0.2s", display:"flex", flexDirection:"column", alignItems:"center", gap:2, fontFamily:"'Nunito',sans-serif" }}>
-                <span style={{ fontSize:16 }}>{t.icon}</span>
+          <div className="customize-tabs" role="tablist" aria-label="Strip customization tools">
+            {tabs.map(t=> {
+              const Icon=t.icon
+              return <button key={t.id} type="button" id={`customize-tab-${t.id}`} role="tab" aria-selected={tab===t.id} aria-controls={`customize-panel-${t.id}`} className={tab===t.id ? "is-active" : ""} onClick={()=>setTab(t.id)}>
+                <Icon aria-hidden="true" />
                 {t.label}
               </button>
-            ))}
+            })}
           </div>
 
           {tab==="frame"&&(
-            <div>
-              <p style={{ fontSize:13, fontWeight:700, color:"#9B7B90", marginBottom:14 }}>Frame Color</p>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
+            <div className="customize-panel" id="customize-panel-frame" role="tabpanel" aria-labelledby="customize-tab-frame">
+              <h2>Frame color</h2>
+              <div className="frame-swatches">
                 {FRAME_COLORS.map(c=>(
-                  <button key={c.v} onClick={()=>setFrameColor(c.v)} title={c.label} style={{ width:36, height:36, borderRadius:"50%", border:`3px solid ${frameColor===c.v?"#C85B82":"transparent"}`, background:c.v, cursor:"pointer", boxShadow:"0 2px 8px rgba(0,0,0,0.14)", outline:c.v==="#ffffff"?"1px solid rgba(0,0,0,0.07)":"none", transition:"all 0.2s", transform:frameColor===c.v?"scale(1.18)":"scale(1)" }}/>
+                  <button key={c.v} type="button" aria-label={`${c.label} frame`} aria-pressed={frameColor===c.v} className={`frame-swatch${frameColor===c.v ? " is-selected" : ""}`} style={{ "--swatch":c.v } as FrameSwatchProperties} onClick={()=>setFrameColor(c.v)}>
+                    {frameColor===c.v&&<Check aria-hidden="true" />}
+                  </button>
                 ))}
               </div>
             </div>
           )}
 
           {tab==="filter"&&(
-            <div>
-              <p style={{ fontSize:13, fontWeight:700, color:"#9B7B90", marginBottom:14 }}>Photo Filter</p>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+            <div className="customize-panel" id="customize-panel-filter" role="tabpanel" aria-labelledby="customize-tab-filter">
+              <h2>Photo filter</h2>
+              <div className="strip-filter-grid">
                 {FILTERS.map(f=>(
-                  <button key={f.id} onClick={()=>setFilter(f.id)} style={{ borderRadius:12, border:`2px solid ${filter===f.id?"#C85B82":"transparent"}`, padding:0, cursor:"pointer", overflow:"hidden", boxShadow:filter===f.id?"0 2px 14px rgba(200,91,130,0.3)":"0 1px 4px rgba(0,0,0,0.07)", transform:filter===f.id?"scale(1.06)":"scale(1)", transition:"all 0.2s" }}>
-                    <div style={{ height:50, overflow:"hidden", background:"#eee" }}>
-                      {selectedPhotos[0]&&<img src={selectedPhotos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", filter:f.css!=="none"?f.css:undefined }}/>}
+                  <button key={f.id} type="button" aria-label={f.name} aria-pressed={filter===f.id} className={`strip-filter-choice${filter===f.id ? " is-selected" : ""}`} onClick={()=>setFilter(f.id)}>
+                    <div className="strip-filter-choice__thumbnail">
+                      {selectedPhotos[0]&&<img src={selectedPhotos[0]} alt="" style={{ filter:f.css!=="none"?f.css:undefined }}/>}
                     </div>
-                    <div style={{ padding:"6px 4px", background:"#fff", fontSize:11, fontWeight:filter===f.id?700:500, color:filter===f.id?"#C85B82":"#9B7B90", textAlign:"center", fontFamily:"'Nunito',sans-serif" }}>{f.name}</div>
+                    <span>{f.name}</span>
+                    {filter===f.id&&<Check className="strip-filter-choice__check" aria-hidden="true" />}
                   </button>
                 ))}
               </div>
@@ -2084,41 +2067,41 @@ function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
           )}
 
           {tab==="stickers"&&(
-            <div>
-              <p style={{ fontSize:13, fontWeight:700, color:"#9B7B90", marginBottom:5 }}>Add Stickers</p>
-              <p style={{ fontSize:11, color:"#ccc", marginBottom:14 }}>Click to add at a random spot</p>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+            <div className="customize-panel" id="customize-panel-stickers" role="tabpanel" aria-labelledby="customize-tab-stickers">
+              <h2>Add stickers</h2>
+              <p>Choose a sticker to add it to a random spot.</p>
+              <div className="sticker-grid">
                 {STICKER_EMOJIS.map(e=>(
-                  <button key={e} onClick={()=>addSticker(e)} style={{ fontSize:22, background:"rgba(200,91,130,0.06)", border:"1.5px solid rgba(200,91,130,0.1)", borderRadius:10, padding:"6px 8px", cursor:"pointer", transition:"all 0.15s", lineHeight:1 }}
-                    onMouseEnter={el=>el.currentTarget.style.transform="scale(1.22)"}
-                    onMouseLeave={el=>el.currentTarget.style.transform=""}
-                  >{e}</button>
+                  <button key={e} type="button" aria-label={`Add ${e} sticker`} onClick={()=>addSticker(e)}>{e}</button>
                 ))}
               </div>
             </div>
           )}
 
           {tab==="text"&&(
-            <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-              <p style={{ fontSize:13, fontWeight:700, color:"#9B7B90" }}>Names & Date</p>
-              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                <input value={name1} onChange={e=>setName1(e.target.value)} placeholder="Your name" style={{ flex:1, padding:"10px 13px", borderRadius:10, border:"1.5px solid rgba(200,91,130,0.2)", fontFamily:"'Nunito',sans-serif", fontSize:14, color:"#2D1B2E", background:"#fff", outline:"none" }}/>
-                <span style={{ color:"#C85B82", fontFamily:"'Dancing Script',cursive", fontSize:20, flexShrink:0 }}>♡</span>
-                <input value={name2} onChange={e=>setName2(e.target.value)} placeholder="Partner name" style={{ flex:1, padding:"10px 13px", borderRadius:10, border:"1.5px solid rgba(200,91,130,0.2)", fontFamily:"'Nunito',sans-serif", fontSize:14, color:"#2D1B2E", background:"#fff", outline:"none" }}/>
+            <div className="customize-panel customize-panel--names" id="customize-panel-text" role="tabpanel" aria-labelledby="customize-tab-text">
+              <h2>Names and date</h2>
+              <div className="name-fields">
+                <div>
+                  <label htmlFor="strip-name-one">Your name</label>
+                  <input id="strip-name-one" value={name1} onChange={e=>setName1(e.target.value)} />
+                </div>
+                <div>
+                  <label htmlFor="strip-name-two">Partner name</label>
+                  <input id="strip-name-two" value={name2} onChange={e=>setName2(e.target.value)} />
+                </div>
               </div>
-              <input value={date} onChange={e=>setDate(e.target.value)} style={{ padding:"10px 13px", borderRadius:10, border:"1.5px solid rgba(200,91,130,0.2)", fontFamily:"'Nunito',sans-serif", fontSize:14, color:"#2D1B2E", background:"#fff", outline:"none" }}/>
+              <div>
+                <label htmlFor="strip-date">Date</label>
+                <input id="strip-date" value={date} onChange={e=>setDate(e.target.value)} />
+              </div>
             </div>
           )}
 
-          <button
-            onClick={()=>onDone({frameColor,filter,stickers,name1,name2,date,offsets})}
-            style={{ width:"100%", marginTop:28, padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}
-          >
-            Develop My Strip ✦
-          </button>
-        </div>
+          <StudioButton block className="customize-develop" onClick={()=>onDone({frameColor,filter,stickers,name1,name2,date,offsets})}>Develop strip</StudioButton>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
 
@@ -2126,77 +2109,61 @@ function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
 // REVEAL SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RevealScreen({ stripUrl, isRevealing, downloadStatus, onDownload, onShare, onStartAgain }:{
+export function RevealScreen({ stripUrl, isRevealing, downloadStatus, onDownload, onShare, onStartAgain }:{
   stripUrl:string; isRevealing:boolean; downloadStatus:"idle"|"working"|"done"|"error";
   onDownload:()=>void; onShare:()=>void; onStartAgain:()=>void
 }) {
-  const [dots,   setDots]    = useState(".")
   const [showStrip, setShow] = useState(false)
 
   useEffect(()=>{
-    if(!isRevealing){ setTimeout(()=>setShow(true),200); return }
-    const t=setInterval(()=>setDots(d=>d.length>=3?".":d+"."),480)
-    return ()=>clearInterval(t)
+    if(isRevealing){
+      setShow(false)
+      return
+    }
+    const entranceTimeout=setTimeout(()=>setShow(true),200)
+    return ()=>clearTimeout(entranceTimeout)
   },[isRevealing])
 
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"48px 24px", background:isRevealing?"linear-gradient(160deg,#180810,#2d0e1a)":"linear-gradient(160deg,#FDF2F8,#FDF7F2)", fontFamily:"'Nunito',sans-serif", position:"relative", overflow:"hidden", transition:"background 1.4s ease" }}>
-      <div className="grain-overlay" />
-
-      {/* Darkroom ambient light */}
-      {isRevealing&&<div style={{ position:"absolute", inset:0, background:"radial-gradient(ellipse at 50% 10%,rgba(200,30,60,0.15) 0%,transparent 65%)", pointerEvents:"none" }}/>}
-
-      <div style={{ position:"relative", zIndex:10, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:20 }}>
+    <main className={`reveal screen-enter${isRevealing ? " reveal--developing" : " reveal--complete"}`}>
+      <div className="reveal__content">
         {isRevealing?(
-          <>
-            <div style={{ fontSize:52, animation:"heartbeat 1.6s ease infinite" }}>🌹</div>
-            <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:36, color:"#e8a0b0", margin:0 }}>Developing{dots}</h2>
-            <p style={{ color:"rgba(232,160,176,0.58)", fontSize:15 }}>Your memories are being printed…</p>
-            <div style={{ width:220, height:4, background:"rgba(255,255,255,0.08)", borderRadius:2, overflow:"hidden" }}>
-              <div style={{ height:"100%", background:"linear-gradient(90deg,#C85B82,#e8a0b0)", borderRadius:2, width:"60%", backgroundSize:"200% 100%", animation:"shimmerBar 1.4s linear infinite" }}/>
-            </div>
-          </>
+          <section className="reveal__processing" aria-label="Developing your strip">
+            <Aperture aria-hidden="true" />
+            <h1>Developing your strip</h1>
+            <p>Your photos are being printed.</p>
+            <div className="reveal__progress" aria-hidden="true"><span /></div>
+          </section>
         ):(
-          <>
-            <p style={{ fontSize:11, letterSpacing:"0.22em", color:"#C85B82", fontWeight:700, margin:0 }}>✦  YOUR STRIP IS READY  ✦</p>
-            <h2 style={{ fontFamily:"'DM Serif Display',serif", fontSize:36, color:"#2D1B2E", margin:0 }}>Here you are, together.</h2>
-            <p style={{ color:"#9B7B90", fontSize:15 }}>Download or share your print — cherish it forever.</p>
-
-            {/* Strip reveal */}
+          <section className="reveal__final">
+            <p className="reveal__eyebrow">Your strip is ready</p>
+            <h1>Here you are, together.</h1>
+            <p className="reveal__intro">A little piece of this moment, just for you.</p>
             {stripUrl&&showStrip&&(
-              <div style={{ animation:"stripSlide 0.95s cubic-bezier(0.22,1,0.36,1) forwards", boxShadow:"0 28px 80px rgba(0,0,0,0.22)", borderRadius:10, overflow:"hidden", maxHeight:"58vh" }}>
-                <img src={stripUrl} alt="Your photo strip" style={{ display:"block", maxHeight:"58vh", maxWidth:"88vw", animation:"developing 2.4s ease forwards" }}/>
+              <div className="reveal__strip">
+                <img src={stripUrl} alt="Your photo strip" />
               </div>
             )}
-
-            {/* Actions */}
-            <div style={{ display:"flex", flexWrap:"wrap", gap:12, justifyContent:"center", marginTop:6 }}>
-              <button disabled={downloadStatus==="working"} onClick={onDownload} style={{ display:"flex", alignItems:"center", gap:8, padding:"13px 28px", borderRadius:50, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:15, border:"none", cursor:downloadStatus==="working"?"wait":"pointer", opacity:downloadStatus==="working"?.72:1, boxShadow:"0 6px 24px rgba(200,91,130,0.42)" }}>
-                <Download size={15}/>{downloadStatus==="working"?"Preparing…":"Download Strip"}
-              </button>
-              <button onClick={onShare} style={{ display:"flex", alignItems:"center", gap:8, padding:"13px 26px", borderRadius:50, background:"transparent", border:"1.5px solid rgba(200,91,130,0.35)", color:"#C85B82", fontFamily:"'Nunito',sans-serif", fontWeight:600, fontSize:15, cursor:"pointer" }}>
-                <Share2 size={15}/>Share
-              </button>
-              <button onClick={onStartAgain} style={{ display:"flex", alignItems:"center", gap:8, padding:"13px 22px", borderRadius:50, background:"transparent", border:"1.5px solid rgba(0,0,0,0.1)", color:"#9B7B90", fontFamily:"'Nunito',sans-serif", fontWeight:600, fontSize:15, cursor:"pointer" }}>
-                <RotateCcw size={14}/>Start Again
-              </button>
+            <div className="reveal__actions">
+              <StudioButton disabled={downloadStatus==="working"} onClick={onDownload}>
+                <Download aria-hidden="true" size={17}/>{downloadStatus==="working" ? "Preparing" : "Download"}
+              </StudioButton>
+              <StudioButton tone="secondary" onClick={onShare}>
+                <Share2 aria-hidden="true" size={17}/>Share
+              </StudioButton>
+              <StudioButton tone="quiet" onClick={onStartAgain}>
+                <RotateCcw aria-hidden="true" size={16}/>Start again
+              </StudioButton>
             </div>
             {downloadStatus!=="idle"&&downloadStatus!=="working"&&(
-              <p style={{ margin:0, fontSize:12, color:downloadStatus==="error"?"#dc2626":"#9B7B90" }}>
-                {downloadStatus==="done"?"Downloaded directly to your device — nothing was uploaded.":"Download failed. Please try again."}
+              <p className={`reveal__download-status reveal__download-status--${downloadStatus}`} role="status">
+                {downloadStatus==="done"?"Saved directly to this device. Nothing was uploaded.":"The download failed. Please try again."}
               </p>
             )}
-
-            {/* GIF teaser */}
-            <div style={{ marginTop:10, padding:"14px 22px", borderRadius:14, background:"rgba(200,91,130,0.05)", border:"1px dashed rgba(200,91,130,0.22)", maxWidth:360 }}>
-              <p style={{ fontSize:12, color:"#9B7B90", lineHeight:1.65, margin:0 }}>
-                🎬 <strong>Coming soon:</strong> Animated GIF & video recap of all 10 shots — export your whole session as a mini film.
-              </p>
-            </div>
-          </>
+          </section>
         )}
       </div>
-    </div>
+    </main>
   )
 }
 
@@ -2204,7 +2171,7 @@ function RevealScreen({ stripUrl, isRevealing, downloadStatus, onDownload, onSha
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function App() {
+export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle }: AppProps = {}) {
   const initialRoom=new URLSearchParams(window.location.search).get("room")?.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,6)||""
   const [screen,  setScreen]  = useState<Screen>(initialRoom.length===6?"room":"landing")
   const [layout,  setLayout]  = useState<Layout>("classic")
@@ -2221,6 +2188,8 @@ export default function App() {
   const [partnerJoined, setPartnerJoined] = useState(false)
   const [copied,  setCopied]  = useState(false)
   const [stream,  setStream]  = useState<MediaStream|null>(null)
+  const [cameraStatus,setCameraStatus]=useState<CameraStatus>({phase:"idle"})
+  const [cameraRequest,setCameraRequest]=useState(0)
   const [remoteStream,setRemoteStream]=useState<MediaStream|null>(null)
   const [pendingMediaCall,setPendingMediaCall]=useState<MediaConnection|null>(null)
   const [captureAt,setCaptureAt]=useState<number|null>(null)
@@ -2238,6 +2207,56 @@ export default function App() {
   const frontRef=useRef<ParticipantId>(frontParticipant)
   const filterRef=useRef<PropLook>(localProp)
   const participantScaleRef=useRef(localParticipantScale)
+  const streamRef=useRef<MediaStream|null>(null)
+  const cameraRequestRef=useRef<ReturnType<typeof createCameraRequestGuard>|null>(null)
+  const revealTimeoutRef=useRef<ReturnType<typeof setTimeout>|null>(null)
+  const stripBuildGenerationRef=useRef(0)
+  const downloadGenerationRef=useRef(0)
+
+  const clearRevealTimeout=useCallback(()=>{
+    if(revealTimeoutRef.current!==null){
+      clearTimeout(revealTimeoutRef.current)
+      revealTimeoutRef.current=null
+    }
+  },[])
+
+  const invalidateStripBuild=useCallback(()=>{
+    stripBuildGenerationRef.current+=1
+    clearRevealTimeout()
+  },[clearRevealTimeout])
+
+  const invalidateDownload=useCallback(()=>{
+    downloadGenerationRef.current+=1
+  },[])
+
+  const invalidateCameraRequest=useCallback(()=>{
+    const request=cameraRequestRef.current
+    request?.cancel()
+    if(cameraRequestRef.current===request) cameraRequestRef.current=null
+  },[])
+
+  const acceptCameraStream=useCallback((nextStream:MediaStream)=>{
+    streamRef.current=nextStream
+    setStream(nextStream)
+  },[])
+
+  const stopCurrentCamera=useCallback(()=>{
+    stopMediaStream(streamRef.current)
+    streamRef.current=null
+    setStream(null)
+  },[])
+
+  useEffect(()=>()=>{
+    invalidateStripBuild()
+    invalidateDownload()
+    invalidateCameraRequest()
+    stopMediaStream(streamRef.current)
+    streamRef.current=null
+  },[invalidateStripBuild,invalidateDownload,invalidateCameraRequest])
+
+  useEffect(()=>{
+    if(screen!=="reveal") invalidateStripBuild()
+  },[screen,invalidateStripBuild])
 
   useEffect(()=>{ syncRef.current={screen,layout,themeId} },[screen,layout,themeId])
   useEffect(()=>{ beautyRef.current=skinSmoothing },[skinSmoothing])
@@ -2250,6 +2269,11 @@ export default function App() {
   }
 
   const navigate=(next:Screen)=>{
+    if(next!=="reveal"){
+      invalidateStripBuild()
+      invalidateDownload()
+    }
+    if(!isCameraLifecycleScreen(next)) invalidateCameraRequest()
     setScreen(next)
     sendMessage({type:"STATE",screen:next,layout,themeId})
   }
@@ -2290,6 +2314,22 @@ export default function App() {
     sendMessage({type:"FRONT",participant:next})
   }
 
+  const retryCamera=()=>{
+    invalidateCameraRequest()
+    stopCurrentCamera()
+    setCameraStatus({phase:"requesting"})
+    setCameraRequest(value=>value+1)
+  }
+
+  useEffect(()=>{
+    if(!cameraLifecycleTestHandle) return
+    const handle={retryCamera}
+    cameraLifecycleTestHandle.current=handle
+    return ()=>{
+      if(cameraLifecycleTestHandle.current===handle) cameraLifecycleTestHandle.current=null
+    }
+  },[cameraLifecycleTestHandle,retryCamera])
+
   // PeerJS provides signaling; media and state updates travel peer-to-peer.
   useEffect(()=>{
     if(screen==="landing") return
@@ -2311,6 +2351,12 @@ export default function App() {
       connection.on("data",raw=>{
         const message=raw as SyncMessage
         if(message.type==="STATE"){
+          invalidateStripBuild()
+          if(message.screen!=="reveal"){
+            invalidateDownload()
+            setDownloadStatus("idle")
+          }
+          if(!isCameraLifecycleScreen(message.screen)) invalidateCameraRequest()
           setScreen(message.screen);setLayout(message.layout);setThemeId(message.themeId)
         }
         if(message.type==="BEAUTY") setPartnerSkinSmoothing(message.strength===2?2:message.strength===1?1:0)
@@ -2334,7 +2380,7 @@ export default function App() {
       dataRef.current?.close(); mediaRef.current?.close(); peer.destroy()
       dataRef.current=null; mediaRef.current=null; peerRef.current=null
     }
-  },[roomCode,isHost])
+  },[roomCode,isHost,invalidateCameraRequest,invalidateDownload,invalidateStripBuild])
 
   // Tips rotation
   useEffect(()=>{
@@ -2345,22 +2391,47 @@ export default function App() {
 
   // Camera lifecycle
   useEffect(()=>{
-    let active=true
-    if(screen==="ready"||screen==="booth"){
-      const demoParticipant=import.meta.env.DEV?new URLSearchParams(window.location.search).get("demo"):null
-      const demoPose=new URLSearchParams(window.location.search).get("demoPose")||"full"
-      const demoMotion=new URLSearchParams(window.location.search).get("demoMotion")==="1"
-      const demoScale=Math.max(.72,Math.min(1.35,Number(new URLSearchParams(window.location.search).get("demoScale"))||1))
-      const cameraPromise=demoParticipant==="p1"||demoParticipant==="p2"
-        ? createLocalDemoStream(demoParticipant,demoPose,demoMotion,demoScale)
-        : navigator.mediaDevices.getUserMedia({ video:{ facingMode:"user", width:{ideal:1280}, height:{ideal:720} }, audio:true })
-      if(!stream) cameraPromise
-        .then(s=>{ if(active) setStream(s); else s.getTracks().forEach(t=>t.stop()) }).catch(()=>{})
-    } else {
-      setStream(prev=>{ prev?.getTracks().forEach(t=>t.stop()); return null })
+    if(!isCameraLifecycleScreen(screen)){
+      setCameraStatus({phase:"idle"})
+      stopCurrentCamera()
+      return
     }
-    return ()=>{ active=false }
-  },[screen])
+
+    const request=createCameraRequestGuard()
+    cameraRequestRef.current=request
+    const cancelRequest=()=>{
+      request.cancel()
+      if(cameraRequestRef.current===request) cameraRequestRef.current=null
+    }
+
+    if(stream) return cancelRequest
+
+    setCameraStatus({phase:"requesting"})
+    const demoParticipant=import.meta.env.DEV?new URLSearchParams(window.location.search).get("demo"):null
+    const demoPose=new URLSearchParams(window.location.search).get("demoPose")||"full"
+    const demoMotion=new URLSearchParams(window.location.search).get("demoMotion")==="1"
+    const demoScale=Math.max(.72,Math.min(1.35,Number(new URLSearchParams(window.location.search).get("demoScale"))||1))
+    const cameraPromise=demoParticipant==="p1"||demoParticipant==="p2"
+      ? createLocalDemoStream(demoParticipant,demoPose,demoMotion,demoScale)
+      : Promise.resolve().then(()=>{
+        const devices=navigator.mediaDevices
+        if(typeof devices?.getUserMedia!=="function") throw new Error("Camera API unavailable")
+        return devices.getUserMedia({ video:{ facingMode:"user", width:{ideal:1280}, height:{ideal:720} }, audio:true })
+      })
+
+    void cameraPromise
+      .then(nextStream=>{
+        request.accept(nextStream,acceptedStream=>{
+          acceptCameraStream(acceptedStream)
+          setCameraStatus({phase:"ready"})
+        })
+      })
+      .catch(error=>{
+        request.reject(error,reason=>setCameraStatus(classifyCameraFailure(reason)))
+      })
+
+    return cancelRequest
+  },[screen,cameraRequest,stream,acceptCameraStream,stopCurrentCamera])
 
   // Once both cameras are ready, the guest calls the host. The host answers with its stream.
   useEffect(()=>{
@@ -2385,6 +2456,9 @@ export default function App() {
   }
 
   const startSession=(joinCode?:string)=>{
+    invalidateStripBuild()
+    invalidateDownload()
+    setDownloadStatus("idle")
     const nextCode=joinCode||genCode()
     setRoomCode(nextCode); setIsHost(!joinCode); setPartnerJoined(false)
     const params=new URLSearchParams({room:nextCode})
@@ -2399,6 +2473,7 @@ export default function App() {
     const demoScale=new URLSearchParams(window.location.search).get("demoScale")
     if(import.meta.env.DEV&&demoScale) params.set("demoScale",demoScale)
     window.history.replaceState({},"",`${window.location.pathname}?${params}`)
+    invalidateCameraRequest()
     setScreen("room")
   }
 
@@ -2413,6 +2488,10 @@ export default function App() {
   }
 
   const handleCustomizeDone=async({ frameColor,filter,stickers,name1,name2,date,offsets }:CustomizeOpts)=>{
+    invalidateStripBuild()
+    invalidateDownload()
+    setDownloadStatus("idle")
+    const stripBuildGeneration=stripBuildGenerationRef.current
     setRevealing(true); navigate("reveal")
     const need=layout==="classic"?4:6
     const sel=selected.slice(0,need).map(i=>photos[i])
@@ -2442,6 +2521,7 @@ export default function App() {
       const pw=(stripW-pad*2-gap*(cols-1))/cols
       const x=pad+col*(pw+gap), y=hdr+pad+row*(photoH+gap)
       const img=await loadImg(sel[i])
+      if(stripBuildGeneration!==stripBuildGenerationRef.current) return
       const scale=Math.max(pw/img.width,photoH/img.height)*1.12
       const dw=img.width*scale, dh=img.height*scale
       const off=offsets[i]||{x:0,y:0}
@@ -2470,30 +2550,67 @@ export default function App() {
     ctx.fillStyle=isDark?"rgba(255,255,255,0.32)":"#ccc"
     ctx.fillText(date,stripW/2,fY+76)
 
+    if(stripBuildGeneration!==stripBuildGenerationRef.current) return
     setStripUrl(canvas.toDataURL("image/png"))
-    setTimeout(()=>setRevealing(false),2900)
+    if(stripBuildGeneration!==stripBuildGenerationRef.current) return
+    revealTimeoutRef.current=setTimeout(()=>{
+      revealTimeoutRef.current=null
+      if(stripBuildGeneration===stripBuildGenerationRef.current) setRevealing(false)
+    },2900)
   }
 
   const handleStartAgain=()=>{
+    invalidateStripBuild()
+    invalidateDownload()
     dataRef.current?.close(); mediaRef.current?.close(); peerRef.current?.destroy()
-    stream?.getTracks().forEach(track=>track.stop())
-    setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle")
-    setRemoteStream(null); setCaptureAt(null); setStream(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setLocalProp({propId:"none",variant:0});setPartnerProp({propId:"none",variant:0});setLocalParticipantScale(1);setPartnerParticipantScale(1);setFrontParticipant("p1")
+    dataRef.current=null; mediaRef.current=null; peerRef.current=null
+    invalidateCameraRequest()
+    stopCurrentCamera()
+    setLayout("classic"); setThemeId("classic"); setRoomCode(genCode()); setIsHost(true); setCopied(false); setTipIdx(0)
+    setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle"); setCameraStatus({phase:"idle"})
+    setRemoteStream(null); setPendingMediaCall(null); setCaptureAt(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setLocalProp({propId:"none",variant:0});setPartnerProp({propId:"none",variant:0});setLocalParticipantScale(1);setPartnerParticipantScale(1);setFrontParticipant("p1")
     window.history.replaceState({},"",window.location.pathname)
     setScreen("landing")
   }
 
   const handleDownload=async()=>{
     if(!stripUrl||downloadStatus==="working") return
+    const downloadGeneration=downloadGenerationRef.current+1
+    downloadGenerationRef.current=downloadGeneration
     setDownloadStatus("working")
     try{
       await downloadStrip(stripUrl)
-      setDownloadStatus("done")
+      if(downloadGeneration===downloadGenerationRef.current) setDownloadStatus("done")
     }catch(error){
-      console.error("Strip download failed",error)
-      setDownloadStatus("error")
+      if(downloadGeneration===downloadGenerationRef.current){
+        console.error("Strip download failed",error)
+        setDownloadStatus("error")
+      }
     }
   }
+
+  useEffect(()=>{
+    if(!appLifecycleTestHandle) return
+    const handle={
+      restart:handleStartAgain,
+      seedStripBuild: (nextPhotos:string[],nextSelected:number[])=>{
+        setPhotos(nextPhotos)
+        setSelected(nextSelected)
+      },
+      developStrip:handleCustomizeDone,
+      seedReveal: (nextStripUrl:string)=>{
+        invalidateDownload()
+        setDownloadStatus("idle")
+        setStripUrl(nextStripUrl)
+        setRevealing(false)
+        setScreen("reveal")
+      },
+      download:handleDownload,
+      getDownloadStatus:()=>downloadStatus,
+    }
+    appLifecycleTestHandle(handle)
+    return ()=>appLifecycleTestHandle(null)
+  },[appLifecycleTestHandle,handleStartAgain,handleCustomizeDone,handleDownload,invalidateDownload])
 
   return (
     <>
@@ -2502,14 +2619,17 @@ export default function App() {
         {screen==="landing"  && <LandingScreen onStart={startSession}/>} 
         {screen==="room"     && <RoomScreen code={roomCode} partnerJoined={partnerJoined} copied={copied} onCopy={handleCopy} onContinue={()=>navigate("layout")}/>} 
         {screen==="layout"   && <LayoutScreen selected={layout} onSelect={chooseLayout} onContinue={()=>navigate("theme")}/>} 
-        {screen==="theme"    && <ThemeScreen selected={themeId} selectedProp={localProp.propId} onSelect={chooseTheme} onPropSelect={chooseProp} onContinue={()=>navigate("ready")}/>}
+        {screen==="theme"    && <ThemeScreen selected={themeId} selectedProp={localProp.propId} onSelect={chooseTheme} onPropSelect={chooseProp} onBack={()=>navigate("layout")} onContinue={()=>navigate("ready")}/>}
         {screen==="ready"&&(
           <GetReadyScreen
             stream={stream}
             remoteStream={remoteStream}
             tipIndex={tipIdx}
             skinSmoothing={skinSmoothing}
+            cameraStatus={cameraStatus}
             onSkinSmoothingChange={chooseSkinSmoothing}
+            onRetryCamera={retryCamera}
+            onBack={()=>navigate("theme")}
             onContinue={()=>{ setPhotos([]);setSelected([]);navigate("booth") }}
           />
         )}
