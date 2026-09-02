@@ -589,7 +589,7 @@ function renderLandmarkSupport(
   pose:NormalizedLandmark[],
   hands:NormalizedLandmark[][]
 ) {
-  const ctx=supportCanvas.getContext("2d")!
+  const ctx=supportCanvas.getContext("2d", { willReadFrequently: true })!
   const point=(landmark:NormalizedLandmark)=>({x:landmark.x*supportCanvas.width,y:landmark.y*supportCanvas.height})
   ctx.clearRect(0,0,supportCanvas.width,supportCanvas.height)
   ctx.save()
@@ -1577,7 +1577,7 @@ function BoothScreen({ stream, remoteStream, themeId,localProp,partnerProp,skinS
       if(supportCanvas.height!==height) supportCanvas.height=height
       renderLandmarkSupport(supportCanvas,poseRef.current,hands)
       const values=mask.getAsFloat32Array()
-      const supportPixels=supportCanvas.getContext("2d", { willReadFrequently: true })!.getImageData(0,0,width,height).data
+      const supportPixels=supportCanvas.getContext("2d")!.getImageData(0,0,width,height).data
       const pixels=new Uint8ClampedArray(width*height*4)
       const matteAlpha=new Uint8ClampedArray(width*height)
       for(let i=0;i<values.length;i++){

@@ -29,6 +29,7 @@ vi.mock('peerjs', () => {
 })
 
 const keepsakeCss = readFileSync('src/styles/keepsake.css', 'utf8')
+const appSource = readFileSync('src/app/App.tsx', 'utf8')
 
 describe('booth progress', () => {
   it('clamps capture progress to the ten-photo session boundary', () => {
@@ -36,6 +37,23 @@ describe('booth progress', () => {
     expect(getCaptureProgress(0)).toBe('0 of 10')
     expect(getCaptureProgress(10)).toBe('10 of 10')
     expect(getCaptureProgress(11)).toBe('10 of 10')
+  })
+})
+
+describe('support canvas readback context', () => {
+  it('configures repeated reads when the support canvas context is first created', () => {
+    const supportRenderer = appSource.slice(
+      appSource.indexOf('function renderLandmarkSupport'),
+      appSource.indexOf('function boundsFromTracking'),
+    )
+    const personMaskUpdate = appSource.slice(
+      appSource.indexOf('const updatePersonMask'),
+      appSource.indexOf('// Animation loop'),
+    )
+
+    expect(supportRenderer).toContain('supportCanvas.getContext("2d", { willReadFrequently: true })')
+    expect(personMaskUpdate).toContain('supportCanvas.getContext("2d")!.getImageData')
+    expect(personMaskUpdate).not.toContain('supportCanvas.getContext("2d", { willReadFrequently: true })!.getImageData')
   })
 })
 
