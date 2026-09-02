@@ -7,7 +7,7 @@ import {
 import { downloadStrip } from "../lib/downloadStrip"
 import {
   Camera, Download, Share2, RotateCcw, Check, Copy, X,
-  Move, ShieldCheck,
+  Frame, ImageIcon, Move, ShieldCheck, Sticker, Type,
 } from "lucide-react"
 import { BrandMark, SegmentedControl, SetupHeader, StatusPanel, StudioButton } from "./ui/StudioUI"
 import { classifyCameraFailure, type CameraStatus } from "./ui/cameraStatus"
@@ -120,6 +120,7 @@ type SkinSmoothing = 0|1|2
 type ParticipantId = "p1"|"p2"
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
 type CustomCssProperties = React.CSSProperties & { "--thumb-color": string }
+type FrameSwatchProperties = React.CSSProperties & { "--swatch": string }
 export type CameraLifecycleTestHandle = { retryCamera: () => void }
 type AppProps = { cameraLifecycleTestHandle?: MutableRefObject<CameraLifecycleTestHandle | null> }
 type LandmarkMotionFilterState = {
@@ -1921,7 +1922,7 @@ export function SelectScreen({ photos, selected, layout, onToggle, onContinue }:
 // CUSTOMIZE SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
+export function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
   photos:string[]; selectedIndices:number[]; layout:Layout; onDone:(opts:CustomizeOpts)=>void
 }) {
   const [frameColor, setFrameColor] = useState("#ffffff")
@@ -1946,41 +1947,44 @@ function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
   const addSticker=(emoji:string)=>setStickers(prev=>[...prev,{ id:uid(), emoji, x:25+Math.random()*50, y:15+Math.random()*65, rot:(Math.random()-.5)*28 }])
 
   const tabs=[
-    {id:"frame" as const,  label:"Frame",   icon:"🖼️"},
-    {id:"filter" as const, label:"Filter",  icon:"✨"},
-    {id:"stickers" as const,label:"Stickers",icon:"🌸"},
-    {id:"text" as const,   label:"Names",   icon:"✍️"},
+    {id:"frame" as const,  label:"Frame",   icon:Frame},
+    {id:"filter" as const, label:"Filter",  icon:ImageIcon},
+    {id:"stickers" as const,label:"Stickers",icon:Sticker},
+    {id:"text" as const,   label:"Names",   icon:Type},
   ]
+  const removeSticker=(id:string)=>setStickers(previous=>previous.filter(sticker=>sticker.id!==id))
 
   return (
-    <div className="screen-enter" style={{ minHeight:"100vh", background:"#FDF8F4", fontFamily:"'Nunito',sans-serif", position:"relative" }}>
+    <main className="customize-screen screen-enter">
       <div className="grain-overlay" />
-      <div style={{ position:"relative", zIndex:10, maxWidth:900, margin:"0 auto", padding:"32px 18px", display:"flex", flexWrap:"wrap", gap:28, alignItems:"flex-start", justifyContent:"center" }}>
+      <div className="customize-workspace">
 
         {/* Strip preview */}
-        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:12 }}>
-          <p style={{ fontSize:11, letterSpacing:"0.16em", color:"#9B7B90", fontWeight:700 }}>PREVIEW</p>
+        <section className="customize-preview" aria-label="Strip preview">
+          <p className="customize-preview__eyebrow">Preview</p>
 
           <div
-            style={{ width:stripW, background:frameColor, borderRadius:10, boxShadow:"0 14px 52px rgba(0,0,0,0.17)", overflow:"hidden", position:"relative", userSelect:"none" }}
+            className="strip-preview"
+            style={{ width:stripW, background:frameColor }}
             onMouseMove={e=>{ if(!drag) return; const dx=e.clientX-drag.sx,dy=e.clientY-drag.sy; setOffsets(o=>({...o,[drag.idx]:{x:drag.ox+dx,y:drag.oy+dy}})) }}
             onMouseUp={()=>setDrag(null)}
             onMouseLeave={()=>setDrag(null)}
           >
             {/* Header */}
-            <div style={{ height:28, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <span style={{ fontSize:8, letterSpacing:"0.24em", color:isDark?"rgba(255,255,255,0.45)":"#C85B82", fontWeight:700 }}>duet ♡</span>
+            <div className="strip-preview__header">
+              <span className={isDark ? "is-dark" : ""}>duet ♡</span>
             </div>
 
             {/* Photos */}
-            <div style={{ display:"grid", gridTemplateColumns:`repeat(${cols},1fr)`, gap:4, padding:"0 7px" }}>
+            <div className="strip-preview__photos" style={{ gridTemplateColumns:`repeat(${cols},1fr)` }}>
               {selectedPhotos.map((p,i)=>(
                 <div key={i}
-                  style={{ position:"relative", height:photoH, borderRadius:4, overflow:"hidden", cursor:"grab", background:"#eee" }}
+                  className="strip-preview__photo"
+                  style={{ height:photoH }}
                   onMouseDown={e=>{ e.preventDefault(); setDrag({idx:i,sx:e.clientX,sy:e.clientY,ox:offsets[i]?.x||0,oy:offsets[i]?.y||0}) }}
                 >
                   <img src={p} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", filter:filterCSS!=="none"?filterCSS:undefined, transform:`translate(${offsets[i]?.x||0}px,${offsets[i]?.y||0}px) scale(1.12)`, transformOrigin:"center", pointerEvents:"none", transition:drag?.idx===i?"none":"transform 0s" }}/>
-                  <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", background:"rgba(0,0,0,0.2)", opacity:drag?.idx===i?1:0, transition:"opacity 0.15s", pointerEvents:"none" }}>
+                  <div className={`strip-preview__drag${drag?.idx===i ? " is-dragging" : ""}`}>
                     <Move size={13} color="rgba(255,255,255,0.85)"/>
                   </div>
                 </div>
@@ -1989,56 +1993,62 @@ function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
 
             {/* Stickers */}
             {stickers.map(s=>(
-              <div key={s.id} onClick={()=>setStickers(p=>p.filter(x=>x.id!==s.id))} style={{ position:"absolute", left:`${s.x}%`, top:`${s.y}%`, fontSize:17, transform:`rotate(${s.rot}deg)`, cursor:"pointer", userSelect:"none", zIndex:5, lineHeight:1 }} title="Click to remove">
+              <div key={s.id} className="strip-preview__sticker" role="button" tabIndex={0} aria-label={`Remove ${s.emoji} sticker`} onClick={()=>removeSticker(s.id)} onKeyDown={event=>{
+                if(event.key==="Enter"||event.key===" "){ event.preventDefault(); removeSticker(s.id) }
+              }} style={{ left:`${s.x}%`, top:`${s.y}%`, transform:`rotate(${s.rot}deg)` }}>
                 {s.emoji}
               </div>
             ))}
 
             {/* Footer */}
-            <div style={{ height:34, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, marginTop:5 }}>
-              <span style={{ fontSize:11, color:isDark?"rgba(255,255,255,0.65)":"#9B7B90", fontFamily:"'Dancing Script',cursive" }}>
+            <div className={`strip-preview__footer${isDark ? " is-dark" : ""}`}>
+              <span>
                 {name1&&name2?`${name1}  ♡  ${name2}`:name1||name2||"Together ♡"}
               </span>
-              <span style={{ fontSize:8, color:isDark?"rgba(255,255,255,0.35)":"#ccc" }}>{date}</span>
+              <span>{date}</span>
             </div>
           </div>
 
-          <p style={{ fontSize:11, color:"#ccc", textAlign:"center" }}>Drag photos to reposition · Click stickers to remove</p>
-        </div>
+          <p className="customize-preview__hint">Drag photos to reposition. Select a sticker to remove it.</p>
+        </section>
 
         {/* Controls */}
-        <div style={{ flex:1, minWidth:260, maxWidth:380 }}>
+        <section className="customize-tools" aria-label="Customize your strip">
           {/* Tabs */}
-          <div style={{ display:"flex", gap:5, background:"rgba(200,91,130,0.07)", borderRadius:16, padding:5, marginBottom:22 }}>
-            {tabs.map(t=>(
-              <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1, padding:"8px 4px", borderRadius:12, border:"none", background:tab===t.id?"#fff":"transparent", boxShadow:tab===t.id?"0 2px 8px rgba(0,0,0,0.07)":"none", cursor:"pointer", fontSize:10, fontWeight:700, color:tab===t.id?"#C85B82":"#9B7B90", transition:"all 0.2s", display:"flex", flexDirection:"column", alignItems:"center", gap:2, fontFamily:"'Nunito',sans-serif" }}>
-                <span style={{ fontSize:16 }}>{t.icon}</span>
+          <div className="customize-tabs" role="tablist" aria-label="Strip customization tools">
+            {tabs.map(t=> {
+              const Icon=t.icon
+              return <button key={t.id} type="button" id={`customize-tab-${t.id}`} role="tab" aria-selected={tab===t.id} aria-controls={`customize-panel-${t.id}`} className={tab===t.id ? "is-active" : ""} onClick={()=>setTab(t.id)}>
+                <Icon aria-hidden="true" />
                 {t.label}
               </button>
-            ))}
+            })}
           </div>
 
           {tab==="frame"&&(
-            <div>
-              <p style={{ fontSize:13, fontWeight:700, color:"#9B7B90", marginBottom:14 }}>Frame Color</p>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
+            <div className="customize-panel" id="customize-panel-frame" role="tabpanel" aria-labelledby="customize-tab-frame">
+              <h2>Frame color</h2>
+              <div className="frame-swatches">
                 {FRAME_COLORS.map(c=>(
-                  <button key={c.v} onClick={()=>setFrameColor(c.v)} title={c.label} style={{ width:36, height:36, borderRadius:"50%", border:`3px solid ${frameColor===c.v?"#C85B82":"transparent"}`, background:c.v, cursor:"pointer", boxShadow:"0 2px 8px rgba(0,0,0,0.14)", outline:c.v==="#ffffff"?"1px solid rgba(0,0,0,0.07)":"none", transition:"all 0.2s", transform:frameColor===c.v?"scale(1.18)":"scale(1)" }}/>
+                  <button key={c.v} type="button" aria-label={`${c.label} frame`} aria-pressed={frameColor===c.v} className={`frame-swatch${frameColor===c.v ? " is-selected" : ""}`} style={{ "--swatch":c.v } as FrameSwatchProperties} onClick={()=>setFrameColor(c.v)}>
+                    {frameColor===c.v&&<Check aria-hidden="true" />}
+                  </button>
                 ))}
               </div>
             </div>
           )}
 
           {tab==="filter"&&(
-            <div>
-              <p style={{ fontSize:13, fontWeight:700, color:"#9B7B90", marginBottom:14 }}>Photo Filter</p>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+            <div className="customize-panel" id="customize-panel-filter" role="tabpanel" aria-labelledby="customize-tab-filter">
+              <h2>Photo filter</h2>
+              <div className="strip-filter-grid">
                 {FILTERS.map(f=>(
-                  <button key={f.id} onClick={()=>setFilter(f.id)} style={{ borderRadius:12, border:`2px solid ${filter===f.id?"#C85B82":"transparent"}`, padding:0, cursor:"pointer", overflow:"hidden", boxShadow:filter===f.id?"0 2px 14px rgba(200,91,130,0.3)":"0 1px 4px rgba(0,0,0,0.07)", transform:filter===f.id?"scale(1.06)":"scale(1)", transition:"all 0.2s" }}>
-                    <div style={{ height:50, overflow:"hidden", background:"#eee" }}>
-                      {selectedPhotos[0]&&<img src={selectedPhotos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", filter:f.css!=="none"?f.css:undefined }}/>}
+                  <button key={f.id} type="button" aria-label={f.name} aria-pressed={filter===f.id} className={`strip-filter-choice${filter===f.id ? " is-selected" : ""}`} onClick={()=>setFilter(f.id)}>
+                    <div className="strip-filter-choice__thumbnail">
+                      {selectedPhotos[0]&&<img src={selectedPhotos[0]} alt="" style={{ filter:f.css!=="none"?f.css:undefined }}/>}
                     </div>
-                    <div style={{ padding:"6px 4px", background:"#fff", fontSize:11, fontWeight:filter===f.id?700:500, color:filter===f.id?"#C85B82":"#9B7B90", textAlign:"center", fontFamily:"'Nunito',sans-serif" }}>{f.name}</div>
+                    <span>{f.name}</span>
+                    {filter===f.id&&<Check className="strip-filter-choice__check" aria-hidden="true" />}
                   </button>
                 ))}
               </div>
@@ -2046,41 +2056,41 @@ function CustomizeScreen({ photos, selectedIndices, layout, onDone }:{
           )}
 
           {tab==="stickers"&&(
-            <div>
-              <p style={{ fontSize:13, fontWeight:700, color:"#9B7B90", marginBottom:5 }}>Add Stickers</p>
-              <p style={{ fontSize:11, color:"#ccc", marginBottom:14 }}>Click to add at a random spot</p>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+            <div className="customize-panel" id="customize-panel-stickers" role="tabpanel" aria-labelledby="customize-tab-stickers">
+              <h2>Add stickers</h2>
+              <p>Choose a sticker to add it to a random spot.</p>
+              <div className="sticker-grid">
                 {STICKER_EMOJIS.map(e=>(
-                  <button key={e} onClick={()=>addSticker(e)} style={{ fontSize:22, background:"rgba(200,91,130,0.06)", border:"1.5px solid rgba(200,91,130,0.1)", borderRadius:10, padding:"6px 8px", cursor:"pointer", transition:"all 0.15s", lineHeight:1 }}
-                    onMouseEnter={el=>el.currentTarget.style.transform="scale(1.22)"}
-                    onMouseLeave={el=>el.currentTarget.style.transform=""}
-                  >{e}</button>
+                  <button key={e} type="button" aria-label={`Add ${e} sticker`} onClick={()=>addSticker(e)}>{e}</button>
                 ))}
               </div>
             </div>
           )}
 
           {tab==="text"&&(
-            <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-              <p style={{ fontSize:13, fontWeight:700, color:"#9B7B90" }}>Names & Date</p>
-              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                <input value={name1} onChange={e=>setName1(e.target.value)} placeholder="Your name" style={{ flex:1, padding:"10px 13px", borderRadius:10, border:"1.5px solid rgba(200,91,130,0.2)", fontFamily:"'Nunito',sans-serif", fontSize:14, color:"#2D1B2E", background:"#fff", outline:"none" }}/>
-                <span style={{ color:"#C85B82", fontFamily:"'Dancing Script',cursive", fontSize:20, flexShrink:0 }}>♡</span>
-                <input value={name2} onChange={e=>setName2(e.target.value)} placeholder="Partner name" style={{ flex:1, padding:"10px 13px", borderRadius:10, border:"1.5px solid rgba(200,91,130,0.2)", fontFamily:"'Nunito',sans-serif", fontSize:14, color:"#2D1B2E", background:"#fff", outline:"none" }}/>
+            <div className="customize-panel customize-panel--names" id="customize-panel-text" role="tabpanel" aria-labelledby="customize-tab-text">
+              <h2>Names and date</h2>
+              <div className="name-fields">
+                <div>
+                  <label htmlFor="strip-name-one">Your name</label>
+                  <input id="strip-name-one" value={name1} onChange={e=>setName1(e.target.value)} />
+                </div>
+                <div>
+                  <label htmlFor="strip-name-two">Partner name</label>
+                  <input id="strip-name-two" value={name2} onChange={e=>setName2(e.target.value)} />
+                </div>
               </div>
-              <input value={date} onChange={e=>setDate(e.target.value)} style={{ padding:"10px 13px", borderRadius:10, border:"1.5px solid rgba(200,91,130,0.2)", fontFamily:"'Nunito',sans-serif", fontSize:14, color:"#2D1B2E", background:"#fff", outline:"none" }}/>
+              <div>
+                <label htmlFor="strip-date">Date</label>
+                <input id="strip-date" value={date} onChange={e=>setDate(e.target.value)} />
+              </div>
             </div>
           )}
 
-          <button
-            onClick={()=>onDone({frameColor,filter,stickers,name1,name2,date,offsets})}
-            style={{ width:"100%", marginTop:28, padding:"15px", borderRadius:16, background:"linear-gradient(135deg,#C85B82,#BFA3D4)", color:"#fff", fontFamily:"'Nunito',sans-serif", fontWeight:700, fontSize:16, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(200,91,130,0.35)" }}
-          >
-            Develop My Strip ✦
-          </button>
-        </div>
+          <StudioButton block className="customize-develop" onClick={()=>onDone({frameColor,filter,stickers,name1,name2,date,offsets})}>Develop strip</StudioButton>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import App, { type CameraLifecycleTestHandle, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, SelectScreen, ThemeScreen } from './App'
+import App, { type CameraLifecycleTestHandle, CustomizeScreen, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, SelectScreen, ThemeScreen } from './App'
 
 vi.mock('peerjs', () => {
   class MockConnection {
@@ -51,6 +51,52 @@ describe('contact-sheet selection', () => {
     expect(screen.getByRole('button', { name: 'Photo 2, selected first' })).toBePressed()
     await user.click(screen.getByRole('button', { name: 'Photo 1, not selected' }))
     expect(onToggle).toHaveBeenCalledWith(0)
+  })
+})
+
+describe('strip customization', () => {
+  it('switches labeled tabs and exposes named controls', async () => {
+    const user = userEvent.setup()
+
+    render(<CustomizeScreen photos={['one', 'two', 'three', 'four']} selectedIndices={[0, 1, 2, 3]} layout="classic" onDone={vi.fn()} />)
+
+    expect(screen.getByRole('tab', { name: 'Frame' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'White frame' })).toBePressed()
+    await user.click(screen.getByRole('tab', { name: 'Names' }))
+    expect(screen.getByLabelText('Your name')).toBeInTheDocument()
+    expect(screen.getByLabelText('Partner name')).toBeInTheDocument()
+    expect(screen.getByLabelText('Date')).toBeInTheDocument()
+  })
+
+  it('removes placed stickers by keyboard and preserves the development payload', async () => {
+    const onDone = vi.fn()
+    const user = userEvent.setup()
+
+    render(<CustomizeScreen photos={['one', 'two', 'three', 'four']} selectedIndices={[0, 1, 2, 3]} layout="classic" onDone={onDone} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Stickers' }))
+    await user.click(screen.getByRole('button', { name: 'Add 🌸 sticker' }))
+    const placedSticker = screen.getByRole('button', { name: 'Remove 🌸 sticker' })
+    placedSticker.focus()
+    await user.keyboard(' ')
+    expect(screen.queryByRole('button', { name: 'Remove 🌸 sticker' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Names' }))
+    await user.type(screen.getByLabelText('Your name'), 'Alex')
+    await user.type(screen.getByLabelText('Partner name'), 'Sam')
+    await user.clear(screen.getByLabelText('Date'))
+    await user.type(screen.getByLabelText('Date'), 'Sep 2, 2026')
+    await user.click(screen.getByRole('button', { name: 'Develop strip' }))
+
+    expect(onDone).toHaveBeenCalledWith({
+      frameColor: '#ffffff',
+      filter: 'none',
+      stickers: [],
+      name1: 'Alex',
+      name2: 'Sam',
+      date: 'Sep 2, 2026',
+      offsets: {},
+    })
   })
 })
 
