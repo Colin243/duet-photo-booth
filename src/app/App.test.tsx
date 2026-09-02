@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, ThemeScreen } from './App'
@@ -115,7 +115,9 @@ describe('setup selection', () => {
           remoteStream={null}
           tipIndex={0}
           skinSmoothing={0}
+          cameraStatus={{ phase: 'idle' }}
           onSkinSmoothingChange={vi.fn()}
+          onRetryCamera={vi.fn()}
           onContinue={vi.fn()}
           onBack={vi.fn()}
         />
@@ -125,5 +127,58 @@ describe('setup selection', () => {
     expect(screen.getByRole('region', { name: 'Layout setup' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Scene setup' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Ready setup' })).toBeInTheDocument()
+  })
+})
+
+describe('camera recovery', () => {
+  it('shows denied camera guidance and invokes retry', async () => {
+    const onRetryCamera = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <GetReadyScreen
+        stream={null}
+        remoteStream={null}
+        tipIndex={0}
+        skinSmoothing={0}
+        cameraStatus={{
+          phase: 'denied',
+          message: 'Camera access is blocked. Allow camera access in your browser settings, then try again.',
+        }}
+        onSkinSmoothingChange={vi.fn()}
+        onRetryCamera={onRetryCamera}
+        onContinue={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('Camera access is blocked. Allow camera access in your browser settings, then try again.')
+    await user.click(screen.getByRole('button', { name: 'Retry camera' }))
+    expect(onRetryCamera).toHaveBeenCalledOnce()
+  })
+
+  it('keeps continue disabled until an accepted camera request has a played preview', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+
+    render(
+      <GetReadyScreen
+        stream={{ getTracks: () => [] } as unknown as MediaStream}
+        remoteStream={null}
+        tipIndex={0}
+        skinSmoothing={0}
+        cameraStatus={{
+          phase: 'failed',
+          message: 'The camera could not start. Close other camera apps and try again.',
+        }}
+        onSkinSmoothingChange={vi.fn()}
+        onRetryCamera={vi.fn()}
+        onContinue={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => expect(play).toHaveBeenCalled())
+    expect(screen.getByRole('button', { name: 'Waiting for camera…' })).toBeDisabled()
+    play.mockRestore()
   })
 })

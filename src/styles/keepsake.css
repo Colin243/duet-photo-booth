@@ -238,6 +238,31 @@ button, input, textarea { font: inherit; }
 .setup-screen__content > .studio-button { justify-self: center; max-width: 540px; }
 .setup-screen__content--ready { max-width: 580px; }
 
+.ready-preview {
+  aspect-ratio: 4 / 3;
+  background: #111;
+  border-radius: 22px;
+  box-shadow: 0 10px 44px rgba(0, 0, 0, 0.18);
+  margin: 0 auto;
+  max-width: 380px;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+.ready-preview__local { display: block; height: 100%; object-fit: cover; transform: scaleX(-1); width: 100%; }
+.ready-preview__partner { aspect-ratio: 4 / 3; border: 3px solid #fff; border-radius: 14px; bottom: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); object-fit: cover; position: absolute; right: 12px; transform: scaleX(-1); width: 34%; }
+.ready-preview__loading { align-items: center; color: rgba(255, 255, 255, 0.82); display: flex; flex-direction: column; gap: 10px; inset: 0; justify-content: center; padding: 24px; position: absolute; text-align: center; }
+.ready-preview__loading p { font-size: 0.9375rem; margin: 0; }
+.ready-preview__loading span { color: rgba(255, 255, 255, 0.7); font-size: 0.8125rem; line-height: 1.45; }
+.ready-preview__you, .ready-preview__partner-label { align-items: center; background: rgba(0, 0, 0, 0.48); border-radius: 20px; color: #fff; display: flex; font-size: 0.6875rem; font-weight: 700; gap: 6px; padding: 5px 11px; position: absolute; }
+.ready-preview__you { left: 12px; top: 12px; }
+.ready-preview__you > span:first-child { background: #4ade80; border-radius: 50%; box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.28); height: 7px; width: 7px; }
+.ready-preview__partner-label { bottom: 18px; font-size: 0.625rem; right: 18px; }
+.ready-preview__grid { background-image: linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px); background-size: 25% 33.3%; inset: 0; pointer-events: none; position: absolute; }
+.ready-camera-recovery { display: grid; gap: 12px; margin: 0 auto; max-width: 400px; width: 100%; }
+.ready-smoothing { background: var(--studio-surface); border: 1px solid var(--studio-border); border-radius: 16px; box-shadow: 0 3px 16px rgba(59, 36, 68, 0.05); box-sizing: border-box; margin: 0 auto; max-width: 400px; padding: 16px; text-align: left; width: 100%; }
+.ready-smoothing > p { color: var(--studio-muted); font-size: 0.75rem; line-height: 1.45; margin: 9px 2px 0; }
+
 .layout-card-group {
   display: grid;
   gap: 18px;

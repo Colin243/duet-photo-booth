@@ -9,7 +9,8 @@ import {
   Camera, Download, Share2, RotateCcw, Check, Copy, X,
   Move, ShieldCheck,
 } from "lucide-react"
-import { BrandMark, SetupHeader, StatusPanel, StudioButton } from "./ui/StudioUI"
+import { BrandMark, SegmentedControl, SetupHeader, StatusPanel, StudioButton } from "./ui/StudioUI"
+import { classifyCameraFailure, type CameraStatus } from "./ui/cameraStatus"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL CSS
@@ -117,6 +118,10 @@ type PropLook = { propId:PropId; variant:number }
 type SkinSmoothing = 0|1|2
 type ParticipantId = "p1"|"p2"
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
+
+function stopMediaStream(stream: MediaStream|null) {
+  stream?.getTracks().forEach(track=>track.stop())
+}
 type LandmarkMotionFilterState = {
   timestamp:number
   raw:NormalizedLandmark[]
@@ -1283,18 +1288,19 @@ export function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onCont
 // GET READY SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,onSkinSmoothingChange,onContinue,onBack }:{
+export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,cameraStatus,onSkinSmoothingChange,onRetryCamera,onContinue,onBack }:{
   stream:MediaStream|null; remoteStream:MediaStream|null; tipIndex:number;
-  skinSmoothing:SkinSmoothing;onSkinSmoothingChange:(strength:SkinSmoothing)=>void;onContinue:()=>void;onBack:()=>void
+  skinSmoothing:SkinSmoothing;cameraStatus:CameraStatus;onSkinSmoothingChange:(strength:SkinSmoothing)=>void;onRetryCamera:()=>void;onContinue:()=>void;onBack:()=>void
 }) {
   const vidRef = useRef<HTMLVideoElement>(null)
   const remoteRef = useRef<HTMLVideoElement>(null)
-  const [ready, setReady] = useState(false)
+  const [hasPlayed, setHasPlayed] = useState(false)
 
   useEffect(()=>{
+    setHasPlayed(false)
     if(stream&&vidRef.current){
       vidRef.current.srcObject=stream
-      vidRef.current.play().then(()=>setReady(true)).catch(()=>{})
+      void vidRef.current.play().then(()=>setHasPlayed(true)).catch(()=>setHasPlayed(false))
     }
   },[stream])
 
@@ -1305,6 +1311,9 @@ export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,on
     }
   },[remoteStream])
 
+  const isFailure=cameraStatus.phase==="denied"||cameraStatus.phase==="unavailable"||cameraStatus.phase==="failed"
+  const canContinue=cameraStatus.phase==="ready"&&hasPlayed
+
   return (
     <main className="setup-screen setup-screen--ready screen-enter">
       <div className="grain-overlay" />
@@ -1312,39 +1321,46 @@ export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,on
         <SetupHeader step={3} title="Get comfortable" description="Check your lighting, framing, and smile, then you are ready." onBack={onBack} />
 
         {/* Camera preview */}
-        <div style={{ position:"relative", borderRadius:22, overflow:"hidden", background:"#111", aspectRatio:"4/3", maxWidth:380, margin:"0 auto 24px", boxShadow:"0 10px 44px rgba(0,0,0,0.18)" }}>
-          <video ref={vidRef} autoPlay playsInline muted style={{ width:"100%", height:"100%", objectFit:"cover", transform:"scaleX(-1)", display:"block",filter:skinSmoothing===0?"none":skinSmoothing===1?"brightness(1.012) saturate(.995)":"brightness(1.022) saturate(.985)" }}/>
-          {remoteStream&&<video ref={remoteRef} autoPlay playsInline style={{ position:"absolute", right:12, bottom:12, width:"34%", aspectRatio:"4/3", objectFit:"cover", transform:"scaleX(-1)", borderRadius:14, border:"3px solid #fff", boxShadow:"0 8px 24px rgba(0,0,0,.25)" }}/>} 
-          {!ready&&(
-            <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14, color:"rgba(255,255,255,0.7)" }}>
+        <div className="ready-preview">
+          <video ref={vidRef} autoPlay playsInline muted className="ready-preview__local" style={{ filter:skinSmoothing===0?"none":skinSmoothing===1?"brightness(1.012) saturate(.995)":"brightness(1.022) saturate(.985)" }}/>
+          {remoteStream&&<video ref={remoteRef} autoPlay playsInline className="ready-preview__partner"/>}
+          {!hasPlayed&&!isFailure&&(
+            <div className="ready-preview__loading">
               <Camera size={30} strokeWidth={1.5}/>
-              <p style={{ fontSize:14 }}>Requesting camera…</p>
+              <p>{cameraStatus.phase==="requesting"?"Requesting camera…":"Starting your preview…"}</p>
+              {cameraStatus.phase==="requesting"&&<span>Your browser may ask for camera permission.</span>}
             </div>
           )}
-          {ready&&(
-            <div style={{ position:"absolute", top:12, left:12, display:"flex", alignItems:"center", gap:6, background:"rgba(0,0,0,0.48)", backdropFilter:"blur(8px)", borderRadius:20, padding:"5px 11px" }}>
-              <div style={{ width:7, height:7, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 0 2px rgba(74,222,128,0.28)" }}/>
-              <span style={{ fontSize:11, color:"#fff", fontWeight:600 }}>You</span>
+          {hasPlayed&&(
+            <div className="ready-preview__you">
+              <span aria-hidden="true" />
+              <span>You</span>
             </div>
           )}
-          {remoteStream&&<div style={{ position:"absolute", right:18, bottom:18, color:"#fff", background:"rgba(0,0,0,.48)", padding:"4px 9px", borderRadius:20, fontSize:10 }}>Partner · live</div>}
+          {remoteStream&&<div className="ready-preview__partner-label">Partner · live</div>}
           {/* Subtle grid overlay */}
-          {ready&&<div style={{ position:"absolute", inset:0, backgroundImage:"linear-gradient(rgba(255,255,255,0.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.06) 1px,transparent 1px)", backgroundSize:"25% 33.3%", pointerEvents:"none" }}/>}
+          {hasPlayed&&<div className="ready-preview__grid"/>}
         </div>
 
-        <div style={{ margin:"0 auto 18px",maxWidth:400,background:"rgba(255,255,255,.86)",borderRadius:16,padding:"15px 16px",border:"1px solid rgba(200,91,130,.14)",boxShadow:"0 3px 16px rgba(59,36,68,.05)",textAlign:"left" }}>
-          <div style={{ display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",marginBottom:10 }}>
-            <p style={{ margin:0,fontSize:11,fontWeight:900,letterSpacing:".12em",color:"#C85B82" }}>YOUR SKIN SOFTENING</p>
-            <span style={{ fontSize:9,color:"#A78B9E" }}>Your choice only</span>
+        {isFailure&&(
+          <div className="ready-camera-recovery">
+            <StatusPanel tone="error" title={cameraStatus.message} />
+            <StudioButton tone="secondary" block onClick={onRetryCamera}>Retry camera</StudioButton>
           </div>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8 }}>
-            {([[0,"Natural"],[1,"Soft retouch"],[2,"Glow retouch"]] as [SkinSmoothing,string][]).map(([value,label])=>(
-              <button key={value} onClick={()=>onSkinSmoothingChange(value)} style={{ border:`1.5px solid ${skinSmoothing===value?"#C85B82":"#E6D9E1"}`,borderRadius:10,padding:"9px 6px",background:skinSmoothing===value?"#FFF4F8":"#fff",color:skinSmoothing===value?"#A7466A":"#755F70",fontFamily:"'Nunito',sans-serif",fontWeight:800,fontSize:11,cursor:"pointer",boxShadow:skinSmoothing===value?"0 3px 10px rgba(200,91,130,.12)":"none" }}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <p style={{ margin:"9px 2px 0",fontSize:10,lineHeight:1.45,color:"#A08698" }}>Optional and face-only in the booth. Your partner controls their own setting.</p>
+        )}
+
+        <div className="ready-smoothing">
+          <SegmentedControl<SkinSmoothing>
+            label="Your skin smoothing"
+            value={skinSmoothing}
+            options={[
+              { value:0, label:"Natural" },
+              { value:1, label:"Soft" },
+              { value:2, label:"Extra soft" },
+            ]}
+            onChange={onSkinSmoothingChange}
+          />
+          <p>Optional and face-only in the booth. Your partner controls their own setting.</p>
         </div>
 
         {/* Tip card */}
@@ -1353,8 +1369,8 @@ export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,on
           <p style={{ fontSize:14, color:"#2D1B2E", lineHeight:1.65 }}>{TIPS[tipIndex]}</p>
         </div>
 
-        <StudioButton block onClick={onContinue} disabled={!ready}>
-          {ready?"We're ready":"Waiting for camera…"}
+        <StudioButton block onClick={onContinue} disabled={!canContinue}>
+          {canContinue?"We're ready":"Waiting for camera…"}
         </StudioButton>
       </section>
     </main>
@@ -2138,6 +2154,8 @@ export default function App() {
   const [partnerJoined, setPartnerJoined] = useState(false)
   const [copied,  setCopied]  = useState(false)
   const [stream,  setStream]  = useState<MediaStream|null>(null)
+  const [cameraStatus,setCameraStatus]=useState<CameraStatus>({phase:"idle"})
+  const [cameraRequest,setCameraRequest]=useState(0)
   const [remoteStream,setRemoteStream]=useState<MediaStream|null>(null)
   const [pendingMediaCall,setPendingMediaCall]=useState<MediaConnection|null>(null)
   const [captureAt,setCaptureAt]=useState<number|null>(null)
@@ -2207,6 +2225,15 @@ export default function App() {
     sendMessage({type:"FRONT",participant:next})
   }
 
+  const retryCamera=()=>{
+    setStream(current=>{
+      stopMediaStream(current)
+      return null
+    })
+    setCameraStatus({phase:"requesting"})
+    setCameraRequest(value=>value+1)
+  }
+
   // PeerJS provides signaling; media and state updates travel peer-to-peer.
   useEffect(()=>{
     if(screen==="landing") return
@@ -2263,21 +2290,41 @@ export default function App() {
   // Camera lifecycle
   useEffect(()=>{
     let active=true
-    if(screen==="ready"||screen==="booth"){
-      const demoParticipant=import.meta.env.DEV?new URLSearchParams(window.location.search).get("demo"):null
-      const demoPose=new URLSearchParams(window.location.search).get("demoPose")||"full"
-      const demoMotion=new URLSearchParams(window.location.search).get("demoMotion")==="1"
-      const demoScale=Math.max(.72,Math.min(1.35,Number(new URLSearchParams(window.location.search).get("demoScale"))||1))
-      const cameraPromise=demoParticipant==="p1"||demoParticipant==="p2"
-        ? createLocalDemoStream(demoParticipant,demoPose,demoMotion,demoScale)
-        : navigator.mediaDevices.getUserMedia({ video:{ facingMode:"user", width:{ideal:1280}, height:{ideal:720} }, audio:true })
-      if(!stream) cameraPromise
-        .then(s=>{ if(active) setStream(s); else s.getTracks().forEach(t=>t.stop()) }).catch(()=>{})
-    } else {
-      setStream(prev=>{ prev?.getTracks().forEach(t=>t.stop()); return null })
+    if(screen!=="ready"&&screen!=="booth"){
+      setCameraStatus({phase:"idle"})
+      setStream(current=>{
+        stopMediaStream(current)
+        return null
+      })
+      return ()=>{ active=false }
     }
+
+    if(stream) return ()=>{ active=false }
+
+    setCameraStatus({phase:"requesting"})
+    const demoParticipant=import.meta.env.DEV?new URLSearchParams(window.location.search).get("demo"):null
+    const demoPose=new URLSearchParams(window.location.search).get("demoPose")||"full"
+    const demoMotion=new URLSearchParams(window.location.search).get("demoMotion")==="1"
+    const demoScale=Math.max(.72,Math.min(1.35,Number(new URLSearchParams(window.location.search).get("demoScale"))||1))
+    const cameraPromise=demoParticipant==="p1"||demoParticipant==="p2"
+      ? createLocalDemoStream(demoParticipant,demoPose,demoMotion,demoScale)
+      : navigator.mediaDevices.getUserMedia({ video:{ facingMode:"user", width:{ideal:1280}, height:{ideal:720} }, audio:true })
+
+    void cameraPromise
+      .then(nextStream=>{
+        if(!active){
+          stopMediaStream(nextStream)
+          return
+        }
+        setStream(nextStream)
+        setCameraStatus({phase:"ready"})
+      })
+      .catch(error=>{
+        if(active) setCameraStatus(classifyCameraFailure(error))
+      })
+
     return ()=>{ active=false }
-  },[screen])
+  },[screen,cameraRequest,stream])
 
   // Once both cameras are ready, the guest calls the host. The host answers with its stream.
   useEffect(()=>{
@@ -2426,7 +2473,9 @@ export default function App() {
             remoteStream={remoteStream}
             tipIndex={tipIdx}
             skinSmoothing={skinSmoothing}
+            cameraStatus={cameraStatus}
             onSkinSmoothingChange={chooseSkinSmoothing}
+            onRetryCamera={retryCamera}
             onBack={()=>navigate("theme")}
             onContinue={()=>{ setPhotos([]);setSelected([]);navigate("booth") }}
           />
