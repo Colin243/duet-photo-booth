@@ -148,3 +148,45 @@ contains application code and documentation only.
 
 The Vercel project tracks the repository's `main` branch, so an accepted push
 automatically creates the next production deployment.
+
+## Keepsake Studio redesign QA — 2026-09-02
+
+The completed Keepsake Studio pass uses the warm ivory, ink-plum, dusty-berry,
+and pastel-blue direction across the landing, room, setup, booth, selection,
+customization, development, and reveal flow. The responsive pass keeps the
+mobile shell, editor tool tray, booth controls, focus treatment, and
+reduced-motion CSS within the presentation boundary. Camera requests remain
+recoverable and typed, and the repeated-readback context hint remains limited
+to the existing canvas readback boundary.
+
+The MediaPipe model, landmarks, segmentation/mask cleanup, filter anchoring,
+participant normalization, priority compositing, capture timing, and output
+geometry were not changed during final QA. A paired synthetic-camera Washer
+run used `demo=p1` and `demo=p2` with `demoPose=upper`, `demoOverlap=1`, and
+`demoMotion=1`: host/guest connection, shared Back/forward, Wide layout,
+Washer scene, distinct filters and smoothing, proximity endpoints, size
+controls (80/100/120), both front-person choices, tracking, and all ten
+captures were exercised. Six photos were selected; every frame and output
+filter choice, all customization tabs, sticker pointer drag, names/date,
+development, reveal, PNG download, Share invocation, and Start again were
+exercised. The browser confirmed a completed local PNG download and Start
+again reset the URL to the path with no room/demo query, photos, preferences,
+room/role state, and local streams.
+
+The required local QA images and manifest are intentionally ignored at
+`local-reviews/keepsake-studio-redesign-2026-09-02/`. Washer, Classic, and
+Elevator each have a paired upper-body/overlap/motion runtime capture with
+tracking-ready state and one confirmed photo. Across those visual comparisons,
+the filter anchors, equal baseline normalization before size changes,
+arms/overlap ordering, Washer inward-facing framing, edge cleanup, capture
+dimensions, and scene geometry remained within the protected CV boundary. The
+browser's reduced-motion emulation resolved animation and transition duration
+to `1e-05s`; 390px document width matched its client width with no horizontal
+overflow. Console output contained the allowed upstream MediaPipe XNNPACK
+delegate diagnostics, plus one external PeerJS signaling disconnect/503 during
+the separate Classic follow-on session; no application-owned exception or
+asset/request failure was reproduced.
+
+Final release gate on 2026-09-02: `npm run check` completed typecheck, ESLint,
+Vitest (4 files, 38 tests), and Vite build successfully. No push, deployment,
+merge, or CV change was made.
