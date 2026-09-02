@@ -50,8 +50,9 @@ describe('support canvas readback context', () => {
       appSource.indexOf('const updatePersonMask'),
       appSource.indexOf('// Animation loop'),
     )
+    const firstSupportContextCall = supportRenderer.match(/supportCanvas\.getContext\([^)]*\)/)?.[0]
 
-    expect(supportRenderer).toContain('supportCanvas.getContext("2d", { willReadFrequently: true })')
+    expect(firstSupportContextCall).toBe('supportCanvas.getContext("2d", { willReadFrequently: true })')
     expect(personMaskUpdate).toContain('supportCanvas.getContext("2d")!.getImageData')
     expect(personMaskUpdate).not.toContain('supportCanvas.getContext("2d", { willReadFrequently: true })!.getImageData')
   })
