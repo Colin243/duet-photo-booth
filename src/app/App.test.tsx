@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import App, { type CameraLifecycleTestHandle, CustomizeScreen, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RevealScreen, RoomScreen, SelectScreen, ThemeScreen } from './App'
+import App, { type AppLifecycleTestHandle, type CameraLifecycleTestHandle, CustomizeScreen, getCaptureProgress, GetReadyScreen, LandingScreen, LayoutScreen, RevealScreen, RoomScreen, SelectScreen, ThemeScreen } from './App'
+
+const peerEvents = vi.hoisted(() => ({
+  destroys: [] as string[],
+  ids: [] as string[],
+}))
 
 vi.mock('peerjs', () => {
   class MockConnection {
@@ -17,9 +22,13 @@ vi.mock('peerjs', () => {
 
   return {
     default: class MockPeer {
+      constructor(readonly id: string) {
+        peerEvents.ids.push(id)
+      }
+
       connect = vi.fn()
       call = vi.fn()
-      destroy = vi.fn()
+      destroy = vi.fn(() => peerEvents.destroys.push(this.id))
 
       on(event: string, listener: (connection: MockConnection) => void) {
         if (event === 'connection') listener(new MockConnection())
@@ -194,6 +203,136 @@ describe('restart lifecycle', () => {
     )
 
     expect(restartHandler).toContain('setPendingMediaCall(null)')
+  })
+
+  it('returns a guest session with nondefault setup choices to fresh host defaults', async () => {
+    window.history.replaceState({}, '', '/?room=GUEST0')
+    peerEvents.ids.length = 0
+    peerEvents.destroys.length = 0
+    const lifecycle = { current: null as AppLifecycleTestHandle | null }
+    const user = userEvent.setup()
+
+    render(<App appLifecycleTestHandle={handle => { lifecycle.current = handle }} />)
+    await waitFor(() => expect(lifecycle.current).not.toBeNull())
+    expect(screen.getByText('GUEST0')).toBeInTheDocument()
+    expect(peerEvents.ids).toContain('duet-GUEST0-guest')
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByRole('button', { name: /Wide Frame/ }))
+    await user.click(screen.getByRole('button', { name: 'Next: Choose scene' }))
+    await user.click(screen.getByRole('button', { name: /Washer POV/ }))
+
+    act(() => lifecycle.current?.restart())
+    expect(window.location.search).toBe('')
+    expect(screen.getByRole('button', { name: 'Start a booth' })).toBeInTheDocument()
+    expect(peerEvents.destroys).toContain('duet-GUEST0-guest')
+
+    await user.click(screen.getByRole('button', { name: 'Start a booth' }))
+    expect(peerEvents.ids.at(-1)).toMatch(/^duet-(?!GUEST0)[A-Z0-9]{6}-host$/)
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(screen.getByRole('button', { name: /Classic Strip/ })).toBePressed()
+    expect(screen.getByRole('button', { name: /Wide Frame/ })).not.toBePressed()
+    await user.click(screen.getByRole('button', { name: 'Next: Choose scene' }))
+    expect(screen.getByRole('button', { name: /Classic Plain/ })).toBePressed()
+    expect(screen.getByRole('button', { name: /Washer POV/ })).not.toBePressed()
+  })
+
+  it('does not publish or schedule a strip build whose image resolves after restart', async () => {
+    const photoLoad = deferred<void>()
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+    const context = {
+      beginPath: vi.fn(), clip: vi.fn(), drawImage: vi.fn(), fillRect: vi.fn(), fillText: vi.fn(), rect: vi.fn(), restore: vi.fn(), rotate: vi.fn(), save: vi.fn(), translate: vi.fn(),
+    } as unknown as CanvasRenderingContext2D
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context)
+    const toDataUrl = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,latest')
+    const lifecycle = { current: null as (AppLifecycleTestHandle & {
+      developStrip: (options: { frameColor: string; filter: 'none'; stickers: []; name1: string; name2: string; date: string; offsets: Record<number, { x: number; y: number }> }) => Promise<void>
+      seedStripBuild: (photos: string[], selected: number[]) => void
+    }) | null }
+
+    class DeferredImage {
+      height = 600
+      onload: (() => void) | null = null
+      width = 800
+
+      set src(value: string) {
+        if (value === 'deferred-photo') void photoLoad.promise.then(() => this.onload?.())
+      }
+    }
+
+    vi.stubGlobal('Image', DeferredImage)
+
+    try {
+      render(<App appLifecycleTestHandle={handle => { lifecycle.current = handle }} />)
+      await waitFor(() => expect(lifecycle.current).not.toBeNull())
+
+      act(() => lifecycle.current?.seedStripBuild(['deferred-photo'], [0]))
+      await waitFor(() => expect(lifecycle.current).not.toBeNull())
+      act(() => {
+        void lifecycle.current?.developStrip({ frameColor: '#ffffff', filter: 'none', stickers: [], name1: '', name2: '', date: 'Sep 2, 2026', offsets: {} })
+      })
+      expect(screen.getByText('Developing your strip')).toBeInTheDocument()
+
+      act(() => lifecycle.current?.restart())
+      expect(screen.getByRole('button', { name: 'Start a booth' })).toBeInTheDocument()
+
+      await act(async () => {
+        photoLoad.resolve()
+        await photoLoad.promise
+        await Promise.resolve()
+      })
+
+      expect(toDataUrl).not.toHaveBeenCalled()
+      expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), 2900)
+      expect(screen.queryByRole('img', { name: 'Your photo strip' })).not.toBeInTheDocument()
+    } finally {
+      getContext.mockRestore()
+      setTimeoutSpy.mockRestore()
+      toDataUrl.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('publishes the latest valid strip build with the existing PNG output contract', async () => {
+    const context = {
+      beginPath: vi.fn(), clip: vi.fn(), drawImage: vi.fn(), fillRect: vi.fn(), fillText: vi.fn(), rect: vi.fn(), restore: vi.fn(), rotate: vi.fn(), save: vi.fn(), translate: vi.fn(),
+    } as unknown as CanvasRenderingContext2D
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context)
+    const toDataUrl = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,current')
+    const lifecycle = { current: null as (AppLifecycleTestHandle & {
+      developStrip: (options: { frameColor: string; filter: 'none'; stickers: []; name1: string; name2: string; date: string; offsets: Record<number, { x: number; y: number }> }) => Promise<void>
+      seedStripBuild: (photos: string[], selected: number[]) => void
+    }) | null }
+
+    class ReadyImage {
+      height = 600
+      onload: (() => void) | null = null
+      width = 800
+
+      set src(_value: string) {
+        this.onload?.()
+      }
+    }
+
+    vi.stubGlobal('Image', ReadyImage)
+
+    try {
+      const view = render(<App appLifecycleTestHandle={handle => { lifecycle.current = handle }} />)
+      await waitFor(() => expect(lifecycle.current).not.toBeNull())
+      act(() => lifecycle.current?.seedStripBuild(['current-photo'], [0]))
+
+      await act(async () => {
+        await lifecycle.current?.developStrip({ frameColor: '#ffffff', filter: 'none', stickers: [], name1: '', name2: '', date: 'Sep 2, 2026', offsets: {} })
+      })
+
+      expect(toDataUrl).toHaveBeenCalledWith('image/png')
+      expect(screen.getByText('Developing your strip')).toBeInTheDocument()
+      view.unmount()
+    } finally {
+      getContext.mockRestore()
+      toDataUrl.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 })
 

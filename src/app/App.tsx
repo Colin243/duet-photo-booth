@@ -122,7 +122,15 @@ type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
 type CustomCssProperties = React.CSSProperties & { "--thumb-color": string }
 type FrameSwatchProperties = React.CSSProperties & { "--swatch": string }
 export type CameraLifecycleTestHandle = { retryCamera: () => void }
-type AppProps = { cameraLifecycleTestHandle?: MutableRefObject<CameraLifecycleTestHandle | null> }
+export type AppLifecycleTestHandle = {
+  restart: () => void
+  seedStripBuild: (photos: string[], selected: number[]) => void
+  developStrip: (options: CustomizeOpts) => Promise<void>
+}
+type AppProps = {
+  cameraLifecycleTestHandle?: MutableRefObject<CameraLifecycleTestHandle | null>
+  appLifecycleTestHandle?: (handle: AppLifecycleTestHandle | null) => void
+}
 type LandmarkMotionFilterState = {
   timestamp:number
   raw:NormalizedLandmark[]
@@ -2160,7 +2168,7 @@ export function RevealScreen({ stripUrl, isRevealing, downloadStatus, onDownload
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
+export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle }: AppProps = {}) {
   const initialRoom=new URLSearchParams(window.location.search).get("room")?.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,6)||""
   const [screen,  setScreen]  = useState<Screen>(initialRoom.length===6?"room":"landing")
   const [layout,  setLayout]  = useState<Layout>("classic")
@@ -2199,6 +2207,7 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
   const streamRef=useRef<MediaStream|null>(null)
   const cameraRequestRef=useRef<ReturnType<typeof createCameraRequestGuard>|null>(null)
   const revealTimeoutRef=useRef<ReturnType<typeof setTimeout>|null>(null)
+  const stripBuildGenerationRef=useRef(0)
 
   const clearRevealTimeout=useCallback(()=>{
     if(revealTimeoutRef.current!==null){
@@ -2206,6 +2215,11 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
       revealTimeoutRef.current=null
     }
   },[])
+
+  const invalidateStripBuild=useCallback(()=>{
+    stripBuildGenerationRef.current+=1
+    clearRevealTimeout()
+  },[clearRevealTimeout])
 
   const invalidateCameraRequest=useCallback(()=>{
     const request=cameraRequestRef.current
@@ -2225,15 +2239,15 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
   },[])
 
   useEffect(()=>()=>{
-    clearRevealTimeout()
+    invalidateStripBuild()
     invalidateCameraRequest()
     stopMediaStream(streamRef.current)
     streamRef.current=null
-  },[clearRevealTimeout,invalidateCameraRequest])
+  },[invalidateStripBuild,invalidateCameraRequest])
 
   useEffect(()=>{
-    if(screen!=="reveal") clearRevealTimeout()
-  },[screen,clearRevealTimeout])
+    if(screen!=="reveal") invalidateStripBuild()
+  },[screen,invalidateStripBuild])
 
   useEffect(()=>{ syncRef.current={screen,layout,themeId} },[screen,layout,themeId])
   useEffect(()=>{ beautyRef.current=skinSmoothing },[skinSmoothing])
@@ -2246,6 +2260,7 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
   }
 
   const navigate=(next:Screen)=>{
+    if(next!=="reveal") invalidateStripBuild()
     if(!isCameraLifecycleScreen(next)) invalidateCameraRequest()
     setScreen(next)
     sendMessage({type:"STATE",screen:next,layout,themeId})
@@ -2324,6 +2339,7 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
       connection.on("data",raw=>{
         const message=raw as SyncMessage
         if(message.type==="STATE"){
+          invalidateStripBuild()
           if(!isCameraLifecycleScreen(message.screen)) invalidateCameraRequest()
           setScreen(message.screen);setLayout(message.layout);setThemeId(message.themeId)
         }
@@ -2348,7 +2364,7 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
       dataRef.current?.close(); mediaRef.current?.close(); peer.destroy()
       dataRef.current=null; mediaRef.current=null; peerRef.current=null
     }
-  },[roomCode,isHost,invalidateCameraRequest])
+  },[roomCode,isHost,invalidateCameraRequest,invalidateStripBuild])
 
   // Tips rotation
   useEffect(()=>{
@@ -2420,6 +2436,7 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
   }
 
   const startSession=(joinCode?:string)=>{
+    invalidateStripBuild()
     const nextCode=joinCode||genCode()
     setRoomCode(nextCode); setIsHost(!joinCode); setPartnerJoined(false)
     const params=new URLSearchParams({room:nextCode})
@@ -2449,7 +2466,8 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
   }
 
   const handleCustomizeDone=async({ frameColor,filter,stickers,name1,name2,date,offsets }:CustomizeOpts)=>{
-    clearRevealTimeout()
+    invalidateStripBuild()
+    const stripBuildGeneration=stripBuildGenerationRef.current
     setRevealing(true); navigate("reveal")
     const need=layout==="classic"?4:6
     const sel=selected.slice(0,need).map(i=>photos[i])
@@ -2479,6 +2497,7 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
       const pw=(stripW-pad*2-gap*(cols-1))/cols
       const x=pad+col*(pw+gap), y=hdr+pad+row*(photoH+gap)
       const img=await loadImg(sel[i])
+      if(stripBuildGeneration!==stripBuildGenerationRef.current) return
       const scale=Math.max(pw/img.width,photoH/img.height)*1.12
       const dw=img.width*scale, dh=img.height*scale
       const off=offsets[i]||{x:0,y:0}
@@ -2507,23 +2526,41 @@ export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
     ctx.fillStyle=isDark?"rgba(255,255,255,0.32)":"#ccc"
     ctx.fillText(date,stripW/2,fY+76)
 
+    if(stripBuildGeneration!==stripBuildGenerationRef.current) return
     setStripUrl(canvas.toDataURL("image/png"))
+    if(stripBuildGeneration!==stripBuildGenerationRef.current) return
     revealTimeoutRef.current=setTimeout(()=>{
       revealTimeoutRef.current=null
-      setRevealing(false)
+      if(stripBuildGeneration===stripBuildGenerationRef.current) setRevealing(false)
     },2900)
   }
 
   const handleStartAgain=()=>{
-    clearRevealTimeout()
+    invalidateStripBuild()
     dataRef.current?.close(); mediaRef.current?.close(); peerRef.current?.destroy()
+    dataRef.current=null; mediaRef.current=null; peerRef.current=null
     invalidateCameraRequest()
     stopCurrentCamera()
-    setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle")
+    setLayout("classic"); setThemeId("classic"); setRoomCode(genCode()); setIsHost(true); setCopied(false); setTipIdx(0)
+    setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle"); setCameraStatus({phase:"idle"})
     setRemoteStream(null); setPendingMediaCall(null); setCaptureAt(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setLocalProp({propId:"none",variant:0});setPartnerProp({propId:"none",variant:0});setLocalParticipantScale(1);setPartnerParticipantScale(1);setFrontParticipant("p1")
     window.history.replaceState({},"",window.location.pathname)
     setScreen("landing")
   }
+
+  useEffect(()=>{
+    if(!appLifecycleTestHandle) return
+    const handle={
+      restart:handleStartAgain,
+      seedStripBuild: (nextPhotos:string[],nextSelected:number[])=>{
+        setPhotos(nextPhotos)
+        setSelected(nextSelected)
+      },
+      developStrip:handleCustomizeDone,
+    }
+    appLifecycleTestHandle(handle)
+    return ()=>appLifecycleTestHandle(null)
+  },[appLifecycleTestHandle,handleStartAgain])
 
   const handleDownload=async()=>{
     if(!stripUrl||downloadStatus==="working") return
