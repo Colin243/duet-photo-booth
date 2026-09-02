@@ -367,6 +367,7 @@ button, input, textarea { font: inherit; }
 .filter-card__sprite { align-items: center; background: var(--studio-blue-soft); border-radius: 12px; display: inline-flex; height: 48px; justify-content: center; width: 62px; }
 .filter-card__sprite > svg { color: var(--studio-berry-pressed); height: 29px; width: 29px; }
 .filter-card__sprite svg[viewBox] { color: initial; height: 38px; width: 54px; }
+.filter-card__badge { font-size: 0.62rem; justify-self: center; padding: 3px 7px; }
 .filter-card__copy { display: grid; gap: 4px; text-align: center; }
 .filter-card__copy strong { font-size: 0.75rem; line-height: 1.25; }
 .filter-card__copy small { color: var(--studio-muted); font-size: 0.69rem; line-height: 1.25; }

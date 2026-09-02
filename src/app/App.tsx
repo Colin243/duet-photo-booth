@@ -1217,7 +1217,7 @@ function LayoutScreen({ selected, onSelect, onContinue }:{
   return (
     <main className="setup-screen setup-screen--layout screen-enter">
       <div className="grain-overlay" />
-      <section className="setup-screen__content" aria-labelledby="layout-title">
+      <section className="setup-screen__content" aria-label="Layout setup">
         <SetupHeader step={1} title="Choose your layout" description="Both layouts give you 10 attempts to capture the perfect shot." />
 
         <div className="layout-card-group">
@@ -1246,7 +1246,7 @@ export function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onCont
   return (
     <main className="setup-screen setup-screen--theme screen-enter">
       <div className="grain-overlay" />
-      <section className="setup-screen__content" aria-labelledby="scene-title">
+      <section className="setup-screen__content" aria-label="Scene setup">
         <SetupHeader step={2} title="Choose your scene" description="Choose a shared background, then pick your own optional face filter. Your partner chooses theirs separately." onBack={onBack} />
 
         <div className="scene-card-group" aria-label="Shared scene choices">
@@ -1260,11 +1260,12 @@ export function ThemeScreen({ selected,selectedProp,onSelect,onPropSelect,onCont
         </div>
 
         <section className="filter-panel" aria-labelledby="filter-title">
-          <div className="filter-panel__heading"><div><p id="filter-title">Your starting filter</p><span>Optional and visible only on your face.</span></div><span className="choice-badge">Only you</span></div>
+          <div className="filter-panel__heading"><div><p id="filter-title">Your starting filter</p><span>Optional and visible only on your face.</span></div></div>
           <div className="filter-card-group" aria-label="Personal filter choices">
             {PROPS.map(prop=>(
               <button key={prop.id} className={`filter-card${selectedProp===prop.id ? " is-selected" : ""}`} aria-pressed={selectedProp===prop.id} aria-label={prop.name} onClick={()=>onPropSelect(prop.id)}>
                 <span className="filter-card__sprite" aria-hidden="true">{prop.id==="none"?<X />:<FilterSprite look={{propId:prop.id,variant:0}}/>}</span>
+                <span className="choice-badge filter-card__badge">Only you</span>
                 <span className="filter-card__copy"><strong>{prop.name}</strong><small>{prop.tagline}</small></span>
                 {selectedProp===prop.id&&<span className="choice-check"><Check aria-hidden="true" /></span>}
               </button>
@@ -1307,7 +1308,7 @@ export function GetReadyScreen({ stream, remoteStream, tipIndex,skinSmoothing,on
   return (
     <main className="setup-screen setup-screen--ready screen-enter">
       <div className="grain-overlay" />
-      <section className="setup-screen__content setup-screen__content--ready" aria-labelledby="ready-title">
+      <section className="setup-screen__content setup-screen__content--ready" aria-label="Ready setup">
         <SetupHeader step={3} title="Get comfortable" description="Check your lighting, framing, and smile, then you are ready." onBack={onBack} />
 
         {/* Camera preview */}

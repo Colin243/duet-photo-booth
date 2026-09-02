@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { LandingScreen, RoomScreen, ThemeScreen } from './App'
 
 const keepsakeCss = readFileSync('src/styles/keepsake.css', 'utf8')
+const appSource = readFileSync('src/app/App.tsx', 'utf8')
 
 describe('landing and room', () => {
   it('normalizes a six-character room code before joining', async () => {
@@ -79,5 +80,26 @@ describe('setup selection', () => {
 
     expect(screen.getByRole('button', { name: 'XMM Pixel Set' })).toBePressed()
     expect(screen.getByRole('img', { name: 'Washer POV preview' })).toBeInTheDocument()
+  })
+
+  it('marks every starting filter as a personal choice', () => {
+    render(
+      <ThemeScreen
+        selected="classic"
+        selectedProp="none"
+        onSelect={vi.fn()}
+        onPropSelect={vi.fn()}
+        onContinue={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    )
+
+    ;['No filter', 'XHS Heart Glow', 'Douyin Star Halo', 'XMM Pixel Set'].forEach(name => {
+      expect(screen.getByRole('button', { name })).toHaveTextContent('Only you')
+    })
+  })
+
+  it('does not reference missing setup heading ids', () => {
+    expect(appSource).not.toMatch(/aria-labelledby="(?:layout|scene|ready)-title"/)
   })
 })
