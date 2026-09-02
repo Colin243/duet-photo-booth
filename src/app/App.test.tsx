@@ -2,10 +2,9 @@ import { readFileSync } from 'node:fs'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { LandingScreen, RoomScreen, ThemeScreen } from './App'
+import { GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, ThemeScreen } from './App'
 
 const keepsakeCss = readFileSync('src/styles/keepsake.css', 'utf8')
-const appSource = readFileSync('src/app/App.tsx', 'utf8')
 
 describe('landing and room', () => {
   it('normalizes a six-character room code before joining', async () => {
@@ -99,7 +98,32 @@ describe('setup selection', () => {
     })
   })
 
-  it('does not reference missing setup heading ids', () => {
-    expect(appSource).not.toMatch(/aria-labelledby="(?:layout|scene|ready)-title"/)
+  it('gives every setup landmark an accessible name', () => {
+    render(
+      <>
+        <LayoutScreen selected="classic" onSelect={vi.fn()} onContinue={vi.fn()} />
+        <ThemeScreen
+          selected="classic"
+          selectedProp="none"
+          onSelect={vi.fn()}
+          onPropSelect={vi.fn()}
+          onContinue={vi.fn()}
+          onBack={vi.fn()}
+        />
+        <GetReadyScreen
+          stream={null}
+          remoteStream={null}
+          tipIndex={0}
+          skinSmoothing={0}
+          onSkinSmoothingChange={vi.fn()}
+          onContinue={vi.fn()}
+          onBack={vi.fn()}
+        />
+      </>,
+    )
+
+    expect(screen.getByRole('region', { name: 'Layout setup' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Scene setup' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Ready setup' })).toBeInTheDocument()
   })
 })

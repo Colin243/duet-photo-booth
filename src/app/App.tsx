@@ -1198,7 +1198,7 @@ export function RoomScreen({ code, partnerJoined, copied, onCopy, onContinue }:{
 // LAYOUT SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-function LayoutScreen({ selected, onSelect, onContinue }:{
+export function LayoutScreen({ selected, onSelect, onContinue }:{
   selected:Layout; onSelect:(l:Layout)=>void; onContinue:()=>void
 }) {
   const opts:[Layout,string,string,string,React.ReactNode][] = [
