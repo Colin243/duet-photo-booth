@@ -120,6 +120,8 @@ type SkinSmoothing = 0|1|2
 type ParticipantId = "p1"|"p2"
 type FilterId = "none"|"warm"|"cool"|"film"|"bw"|"vivid"
 type CustomCssProperties = React.CSSProperties & { "--thumb-color": string }
+export type CameraLifecycleTestHandle = { retryCamera: () => void }
+type AppProps = { cameraLifecycleTestHandle?: MutableRefObject<CameraLifecycleTestHandle | null> }
 type LandmarkMotionFilterState = {
   timestamp:number
   raw:NormalizedLandmark[]
@@ -146,6 +148,10 @@ interface CustomizeOpts {
   name2:string
   date:string
   offsets:Record<number,{x:number;y:number}>
+}
+
+function isCameraLifecycleScreen(screen: Screen) {
+  return screen === "ready" || screen === "booth"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2142,7 +2148,7 @@ function RevealScreen({ stripUrl, isRevealing, downloadStatus, onDownload, onSha
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function App() {
+export default function App({ cameraLifecycleTestHandle }: AppProps = {}) {
   const initialRoom=new URLSearchParams(window.location.search).get("room")?.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,6)||""
   const [screen,  setScreen]  = useState<Screen>(initialRoom.length===6?"room":"landing")
   const [layout,  setLayout]  = useState<Layout>("classic")
@@ -2179,6 +2185,13 @@ export default function App() {
   const filterRef=useRef<PropLook>(localProp)
   const participantScaleRef=useRef(localParticipantScale)
   const streamRef=useRef<MediaStream|null>(null)
+  const cameraRequestRef=useRef<ReturnType<typeof createCameraRequestGuard>|null>(null)
+
+  const invalidateCameraRequest=useCallback(()=>{
+    const request=cameraRequestRef.current
+    request?.cancel()
+    if(cameraRequestRef.current===request) cameraRequestRef.current=null
+  },[])
 
   const acceptCameraStream=useCallback((nextStream:MediaStream)=>{
     streamRef.current=nextStream
@@ -2192,9 +2205,10 @@ export default function App() {
   },[])
 
   useEffect(()=>()=>{
+    invalidateCameraRequest()
     stopMediaStream(streamRef.current)
     streamRef.current=null
-  },[])
+  },[invalidateCameraRequest])
 
   useEffect(()=>{ syncRef.current={screen,layout,themeId} },[screen,layout,themeId])
   useEffect(()=>{ beautyRef.current=skinSmoothing },[skinSmoothing])
@@ -2207,6 +2221,7 @@ export default function App() {
   }
 
   const navigate=(next:Screen)=>{
+    if(!isCameraLifecycleScreen(next)) invalidateCameraRequest()
     setScreen(next)
     sendMessage({type:"STATE",screen:next,layout,themeId})
   }
@@ -2248,10 +2263,20 @@ export default function App() {
   }
 
   const retryCamera=()=>{
+    invalidateCameraRequest()
     stopCurrentCamera()
     setCameraStatus({phase:"requesting"})
     setCameraRequest(value=>value+1)
   }
+
+  useEffect(()=>{
+    if(!cameraLifecycleTestHandle) return
+    const handle={retryCamera}
+    cameraLifecycleTestHandle.current=handle
+    return ()=>{
+      if(cameraLifecycleTestHandle.current===handle) cameraLifecycleTestHandle.current=null
+    }
+  },[cameraLifecycleTestHandle,retryCamera])
 
   // PeerJS provides signaling; media and state updates travel peer-to-peer.
   useEffect(()=>{
@@ -2274,6 +2299,7 @@ export default function App() {
       connection.on("data",raw=>{
         const message=raw as SyncMessage
         if(message.type==="STATE"){
+          if(!isCameraLifecycleScreen(message.screen)) invalidateCameraRequest()
           setScreen(message.screen);setLayout(message.layout);setThemeId(message.themeId)
         }
         if(message.type==="BEAUTY") setPartnerSkinSmoothing(message.strength===2?2:message.strength===1?1:0)
@@ -2297,7 +2323,7 @@ export default function App() {
       dataRef.current?.close(); mediaRef.current?.close(); peer.destroy()
       dataRef.current=null; mediaRef.current=null; peerRef.current=null
     }
-  },[roomCode,isHost])
+  },[roomCode,isHost,invalidateCameraRequest])
 
   // Tips rotation
   useEffect(()=>{
@@ -2308,14 +2334,20 @@ export default function App() {
 
   // Camera lifecycle
   useEffect(()=>{
-    const request=createCameraRequestGuard()
-    if(screen!=="ready"&&screen!=="booth"){
+    if(!isCameraLifecycleScreen(screen)){
       setCameraStatus({phase:"idle"})
       stopCurrentCamera()
-      return ()=>{ request.cancel() }
+      return
     }
 
-    if(stream) return ()=>{ request.cancel() }
+    const request=createCameraRequestGuard()
+    cameraRequestRef.current=request
+    const cancelRequest=()=>{
+      request.cancel()
+      if(cameraRequestRef.current===request) cameraRequestRef.current=null
+    }
+
+    if(stream) return cancelRequest
 
     setCameraStatus({phase:"requesting"})
     const demoParticipant=import.meta.env.DEV?new URLSearchParams(window.location.search).get("demo"):null
@@ -2337,7 +2369,7 @@ export default function App() {
         request.reject(error,reason=>setCameraStatus(classifyCameraFailure(reason)))
       })
 
-    return ()=>{ request.cancel() }
+    return cancelRequest
   },[screen,cameraRequest,stream,acceptCameraStream,stopCurrentCamera])
 
   // Once both cameras are ready, the guest calls the host. The host answers with its stream.
@@ -2377,6 +2409,7 @@ export default function App() {
     const demoScale=new URLSearchParams(window.location.search).get("demoScale")
     if(import.meta.env.DEV&&demoScale) params.set("demoScale",demoScale)
     window.history.replaceState({},"",`${window.location.pathname}?${params}`)
+    invalidateCameraRequest()
     setScreen("room")
   }
 
@@ -2454,6 +2487,7 @@ export default function App() {
 
   const handleStartAgain=()=>{
     dataRef.current?.close(); mediaRef.current?.close(); peerRef.current?.destroy()
+    invalidateCameraRequest()
     stopCurrentCamera()
     setPhotos([]); setSelected([]); setStripUrl(""); setPartnerJoined(false); setRevealing(false); setDownloadStatus("idle")
     setRemoteStream(null); setCaptureAt(null);setSkinSmoothing(0);setPartnerSkinSmoothing(0);setLocalProp({propId:"none",variant:0});setPartnerProp({propId:"none",variant:0});setLocalParticipantScale(1);setPartnerParticipantScale(1);setFrontParticipant("p1")

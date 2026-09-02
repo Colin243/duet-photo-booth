@@ -1,10 +1,72 @@
 import { readFileSync } from 'node:fs'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, ThemeScreen } from './App'
+import App, { type CameraLifecycleTestHandle, GetReadyScreen, LandingScreen, LayoutScreen, RoomScreen, ThemeScreen } from './App'
+
+vi.mock('peerjs', () => {
+  class MockConnection {
+    open = true
+    close = vi.fn()
+    send = vi.fn()
+
+    on(event: string, listener: () => void) {
+      if (event === 'open') listener()
+    }
+  }
+
+  return {
+    default: class MockPeer {
+      connect = vi.fn()
+      call = vi.fn()
+      destroy = vi.fn()
+
+      on(event: string, listener: (connection: MockConnection) => void) {
+        if (event === 'connection') listener(new MockConnection())
+      }
+    },
+  }
+})
 
 const keepsakeCss = readFileSync('src/styles/keepsake.css', 'utf8')
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined
+  let reject: (reason?: unknown) => void = () => undefined
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+function cameraStream() {
+  const tracks = [{ stop: vi.fn() }, { stop: vi.fn() }]
+  return {
+    stream: { getTracks: () => tracks } as unknown as MediaStream,
+    tracks,
+  }
+}
+
+async function renderAppAtReady(getUserMedia: ReturnType<typeof vi.fn>) {
+  window.history.replaceState({}, '', '/')
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia },
+  })
+  const user = userEvent.setup()
+  const cameraLifecycleTestHandle = { current: null as CameraLifecycleTestHandle | null }
+  const view = render(<App cameraLifecycleTestHandle={cameraLifecycleTestHandle} />)
+
+  await user.click(screen.getByRole('button', { name: 'Start a booth' }))
+  await user.click(screen.getByRole('button', { name: 'Continue' }))
+  await user.click(screen.getByRole('button', { name: 'Next: Choose scene' }))
+  await user.click(screen.getByRole('button', { name: 'Next: Get ready' }))
+  await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1))
+
+  await waitFor(() => expect(cameraLifecycleTestHandle.current).not.toBeNull())
+  return { view, cameraLifecycleTestHandle }
+}
 
 describe('landing and room', () => {
   it('normalizes a six-character room code before joining', async () => {
@@ -224,5 +286,114 @@ describe('camera recovery', () => {
     } finally {
       play.mockRestore()
     }
+  })
+})
+
+describe('App camera request timing', () => {
+  it('stops a request that resolves in the same turn as retry without publishing it as the replacement stream', async () => {
+    const first = deferred<MediaStream>()
+    const second = deferred<MediaStream>()
+    const getUserMedia = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const firstCamera = cameraStream()
+    const replacementCamera = cameraStream()
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+
+    try {
+      const { cameraLifecycleTestHandle } = await renderAppAtReady(getUserMedia)
+
+      await act(async () => {
+        cameraLifecycleTestHandle.current?.retryCamera()
+        first.resolve(firstCamera.stream)
+        await first.promise
+      })
+
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2))
+      expect(firstCamera.tracks[0].stop).toHaveBeenCalledOnce()
+      expect(firstCamera.tracks[1].stop).toHaveBeenCalledOnce()
+
+      await act(async () => {
+        second.resolve(replacementCamera.stream)
+        await second.promise
+      })
+
+      await waitFor(() => expect(document.querySelector('.ready-preview__local')).toHaveProperty('srcObject', replacementCamera.stream))
+      expect(replacementCamera.tracks[0].stop).not.toHaveBeenCalled()
+      expect(replacementCamera.tracks[1].stop).not.toHaveBeenCalled()
+    } finally {
+      play.mockRestore()
+    }
+  })
+
+  it('does not let a rejected old request replace the retry request status', async () => {
+    const first = deferred<MediaStream>()
+    const second = deferred<MediaStream>()
+    const getUserMedia = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+
+    try {
+      const { cameraLifecycleTestHandle } = await renderAppAtReady(getUserMedia)
+
+      await act(async () => {
+        cameraLifecycleTestHandle.current?.retryCamera()
+        first.reject(new Error('old camera failure'))
+        await Promise.resolve()
+      })
+
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2))
+      expect(screen.getByText('Requesting camera…')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Retry camera' })).not.toBeInTheDocument()
+
+      const replacementCamera = cameraStream()
+      await act(async () => {
+        second.resolve(replacementCamera.stream)
+        await second.promise
+      })
+    } finally {
+      play.mockRestore()
+    }
+  })
+
+  it('invalidates a pending camera request before navigating away, then starts a fresh request on return', async () => {
+    const first = deferred<MediaStream>()
+    const second = deferred<MediaStream>()
+    const getUserMedia = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const firstCamera = cameraStream()
+
+    await renderAppAtReady(getUserMedia)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+      first.resolve(firstCamera.stream)
+      await first.promise
+    })
+
+    expect(screen.getByRole('region', { name: 'Scene setup' })).toBeInTheDocument()
+    expect(firstCamera.tracks[0].stop).toHaveBeenCalledOnce()
+    expect(firstCamera.tracks[1].stop).toHaveBeenCalledOnce()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Next: Get ready' }))
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2))
+  })
+
+  it('stops a late camera stream after App unmounts', async () => {
+    const request = deferred<MediaStream>()
+    const getUserMedia = vi.fn().mockReturnValue(request.promise)
+    const lateCamera = cameraStream()
+    const { view } = await renderAppAtReady(getUserMedia)
+
+    await act(async () => {
+      view.unmount()
+      request.resolve(lateCamera.stream)
+      await request.promise
+    })
+
+    expect(lateCamera.tracks[0].stop).toHaveBeenCalledOnce()
+    expect(lateCamera.tracks[1].stop).toHaveBeenCalledOnce()
   })
 })
