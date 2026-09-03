@@ -4,6 +4,7 @@ import {
   FilesetResolver, PoseLandmarker, HandLandmarker, FaceLandmarker,
   type NormalizedLandmark,
 } from "@mediapipe/tasks-vision"
+import { Analytics } from "@vercel/analytics/react"
 import { downloadStrip } from "../lib/downloadStrip"
 import {
   Aperture, Camera, Download, Share2, RotateCcw, Check, Copy, X,
@@ -2615,6 +2616,7 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
   return (
     <>
       <style>{GLOBAL_CSS}</style>
+      <Analytics />
       <div style={{ fontFamily:"'Nunito',sans-serif" }}>
         {screen==="landing"  && <LandingScreen onStart={startSession}/>} 
         {screen==="room"     && <RoomScreen code={roomCode} partnerJoined={partnerJoined} copied={copied} onCopy={handleCopy} onContinue={()=>navigate("layout")}/>} 
