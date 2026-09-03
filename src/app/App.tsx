@@ -13,6 +13,7 @@ import { BrandMark, SegmentedControl, SetupHeader, StatusPanel, StudioButton } f
 import { classifyCameraFailure, type CameraStatus } from "./ui/cameraStatus"
 import { createCameraRequestGuard, stopMediaStream } from "./ui/cameraLifecycle"
 import { SpeedInsights } from "@vercel/speed-insights/react"
+import { Analytics } from "@vercel/analytics/react"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL CSS
@@ -2662,6 +2663,7 @@ export default function App({ cameraLifecycleTestHandle, appLifecycleTestHandle 
         )}
       </div>
       <SpeedInsights />
+      <Analytics />
     </>
   )
 }
